@@ -62,16 +62,18 @@ Otherwise the key passes through so normal numpad typing works. Main thread call
 - **Only writes if changed** — compares JSON.stringify of merged vs current to skip no-op writes
 - **Images synced bidirectionally** — content-addressed filenames mean no conflicts
 - **`sync_path` not synced** — excluded from remote settings write (per-machine config)
+- **Cloud account discovery** lives in `lib/cloud-accounts.js`.
 - **macOS**: detects accounts from `~/Library/CloudStorage/GoogleDrive-*/`
-- **Windows**: scans drive letters for `My Drive/clipboard-tray`
+- **Windows**: scans mounted DriveFS letters for `My Drive`, then resolves labels from PSDrive descriptions, DriveFS `root_preference_sqlite.db`/WAL strings, and recent DriveFS logs. The cache/log fallbacks are intentional because some Windows setups expose blank drive descriptions.
 
 ## Scripts & Process Management
 
-- **`start.sh`/`start.bat`** — call kill script, verify no leftover processes, abort if kill failed, then launch `npx electron .` in background
-- **`kill.sh`/`kill.bat`** — match processes by `$SCRIPT_DIR/node_modules/electron` commandline to avoid killing other Electron apps (VS Code, Discord, etc.). Verify with a second check and force-retry if something survived
-- **`kill.bat` WMIC path matching**: WQL uses `\\` as escaped backslash in LIKE patterns. Pattern is built by `set "SCRIPT_DIR=%SCRIPT_DIR:\=\\%"` then used via delayed expansion inside the WMIC query — `wmic process where "... commandline like '%%!SCRIPT_DIR!node_modules%%'"`
+- **`start.sh`/`start.bat`** — call kill script, verify no leftover processes, abort if kill failed, then launch Electron in background
+- **`update.sh`/`update.bat`** — one-step local update: `git pull --rebase --autostash`, install dependencies if Electron is missing or package files changed, then call the platform start script to relaunch
+- **`kill.sh`/`kill.bat`** — match processes by this checkout's Electron binary to avoid killing other Electron apps (VS Code, Discord, etc.).
 - **Single-instance lock** via `app.requestSingleInstanceLock()` — second launch shows popup instead of starting duplicate
 - **Auto-launch**: `app.setLoginItemSettings({ openAtLogin: true })` — toggled in Settings UI
+- **Windows dev auto-launch**: un-packaged Electron writes `Clipboard Tray.vbs` into the Startup folder and the VBS runs `start.bat` hidden. Avoid pointing login startup directly at `electron.exe`; without a stable working directory it can launch bare Electron or fail to start the app module.
 
 ## UI Patterns
 

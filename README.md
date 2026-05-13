@@ -32,10 +32,12 @@ install.bat
 ```bash
 # macOS / Linux
 ./start.sh        # Kill existing + start in background
+./update.sh       # Pull latest, update deps if needed, relaunch
 ./kill.sh          # Stop
 
 # Windows
 start.bat
+update.bat
 kill.bat
 ```
 

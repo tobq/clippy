@@ -10,6 +10,7 @@ const { exec, spawn } = require('child_process');
 // Module is a no-op on non-Windows platforms so it's safe to require unconditionally.
 const winPaste = require('./lib/windows-paste');
 const getBuildInfo = require('./lib/build-info');
+const getCloudAccounts = require('./lib/cloud-accounts');
 
 app.setName('Clipboard Tray');
 
@@ -18,6 +19,57 @@ const SCRIPT_DIR = __dirname;
 const DB_PATH = path.join(SCRIPT_DIR, 'clipboard-history.json');
 const SETTINGS_PATH = path.join(SCRIPT_DIR, 'clipboard-settings.json');
 const IMG_DIR = path.join(SCRIPT_DIR, 'clipboard-images');
+
+function windowsStartupDir() {
+  const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+}
+
+function windowsDevStartupScriptPath() {
+  return path.join(windowsStartupDir(), 'Clipboard Tray.vbs');
+}
+
+function escapeVbsString(value) {
+  return String(value).replace(/"/g, '""');
+}
+
+function windowsDevStartupScript() {
+  const startBat = path.join(SCRIPT_DIR, 'start.bat');
+  return [
+    'Set shell = CreateObject("WScript.Shell")',
+    `shell.Run """${escapeVbsString(startBat)}""", 0, False`,
+    '',
+  ].join('\r\n');
+}
+
+function removeLegacyStartupShortcuts() {
+  if (process.platform !== 'win32') return;
+  for (const name of ['ClipboardTray.lnk', 'clipboard-tray.lnk', 'clipboard_numpad.lnk']) {
+    try { fs.rmSync(path.join(windowsStartupDir(), name), { force: true }); } catch {}
+  }
+}
+
+function getAutoLaunchEnabled() {
+  if (process.platform === 'win32' && !app.isPackaged) {
+    return fs.existsSync(windowsDevStartupScriptPath());
+  }
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setAutoLaunchEnabled(enabled) {
+  if (process.platform === 'win32' && !app.isPackaged) {
+    const scriptPath = windowsDevStartupScriptPath();
+    if (enabled) {
+      removeLegacyStartupShortcuts();
+      fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+      fs.writeFileSync(scriptPath, windowsDevStartupScript(), 'utf-8');
+    } else {
+      try { fs.rmSync(scriptPath, { force: true }); } catch {}
+    }
+    return;
+  }
+  app.setLoginItemSettings({ openAtLogin: !!enabled });
+}
 
 if (!fs.existsSync(IMG_DIR)) fs.mkdirSync(IMG_DIR, { recursive: true });
 
@@ -861,102 +913,7 @@ function setupIPC() {
     }
   });
 
-  ipcMain.handle('get-cloud-accounts', async () => {
-    const accounts = [];
-    const seen = new Set();
-    const addAccount = (email, myDrivePath) => {
-      const drivePath = path.join(myDrivePath, 'clipboard-tray');
-      if (seen.has(drivePath)) return;
-      seen.add(drivePath);
-      accounts.push({ email, path: drivePath });
-    };
-
-    if (process.platform === 'darwin') {
-      // macOS: ~/Library/CloudStorage/GoogleDrive[-email]/My Drive/
-      const cloudBase = path.join(os.homedir(), 'Library', 'CloudStorage');
-      try {
-        for (const entry of fs.readdirSync(cloudBase)) {
-          // Multi-account folder format: GoogleDrive-email@domain.com/
-          // Single-account folder format: GoogleDrive/ (no dash)
-          if (entry === 'GoogleDrive') {
-            const myDrive = path.join(cloudBase, entry, 'My Drive');
-            if (fs.existsSync(myDrive)) addAccount('Google Drive', myDrive);
-          } else if (entry.startsWith('GoogleDrive-')) {
-            const email = entry.replace('GoogleDrive-', '').replace(/_/g, '.');
-            const myDrive = path.join(cloudBase, entry, 'My Drive');
-            if (fs.existsSync(myDrive)) addAccount(email, myDrive);
-          }
-        }
-      } catch {}
-    } else if (process.platform === 'win32') {
-      // Windows: Google Drive mounts as a virtual drive (G:, H:, etc.).
-      //
-      // Mount letter resolution (both paths run — results deduped):
-      //   1. Registry — HKCU\Software\Google\DriveFS\PerAccountPreferences
-      //      has a JSON blob with mount_point_path per account. Preferred
-      //      over drive-letter scanning because it won't false-positive on
-      //      unrelated drives that happen to contain a "My Drive" folder.
-      //   2. Fallback letter scan G..Z for "\My Drive" — covers misconfigured
-      //      or no-registry setups.
-      //
-      // Account email resolution:
-      //   Google Drive doesn't store the email in the registry or in any
-      //   plaintext file under DriveFS\<account_id>\. The only user-visible
-      //   place is the drive's Windows Explorer "Description" property
-      //   ("tobi@example.com - Google Drive"). We query all Google Drive
-      //   descriptions in a single PowerShell invocation (cold start ~500ms,
-      //   so per-letter calls would be unacceptable).
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-
-      // Step 1: collect candidate mount letters from registry + drive scan.
-      const letters = new Set();
-      try {
-        const { stdout } = await execAsync(
-          'reg query "HKCU\\Software\\Google\\DriveFS" /v PerAccountPreferences',
-          { windowsHide: true, timeout: 3000 }
-        );
-        const match = stdout.match(/REG_SZ\s+(.+)/);
-        if (match) {
-          const prefs = JSON.parse(match[1].trim());
-          for (const acct of prefs.per_account_preferences || []) {
-            const mp = acct.value && acct.value.mount_point_path;
-            if (mp && mp.length === 1) letters.add(mp);
-          }
-        }
-      } catch {}
-      for (const letter of 'GHIJKLMNOPQRSTUVWXYZ') {
-        try {
-          if (fs.existsSync(`${letter}:\\My Drive`)) letters.add(letter);
-        } catch {}
-      }
-
-      // Step 2: one PowerShell call gets all Google Drive descriptions.
-      const emailByLetter = new Map();
-      if (letters.size > 0) {
-        try {
-          const { stdout } = await execAsync(
-            'powershell -NoProfile -Command "Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Description -match \'Google Drive\' } | ForEach-Object { \\"$($_.Name)|$($_.Description)\\" }"',
-            { windowsHide: true, timeout: 5000 }
-          );
-          for (const line of stdout.split(/\r?\n/)) {
-            const [name, desc] = line.split('|');
-            if (!name || !desc) continue;
-            const emailMatch = desc.match(/^(\S+@\S+)/);
-            if (emailMatch) emailByLetter.set(name.trim(), emailMatch[1]);
-          }
-        } catch {}
-      }
-
-      // Step 3: build account entries.
-      for (const letter of letters) {
-        const myDrive = `${letter}:\\My Drive`;
-        const email = emailByLetter.get(letter);
-        addAccount(email || `Google Drive (${letter}:)`, myDrive);
-      }
-    }
-    return accounts;
-  });
+  ipcMain.handle('get-cloud-accounts', () => getCloudAccounts());
 
   ipcMain.handle('sync-now', () => {
     lastSyncMtime = 0;
@@ -964,11 +921,11 @@ function setupIPC() {
   });
 
   ipcMain.handle('get-auto-launch', () => {
-    return app.getLoginItemSettings().openAtLogin;
+    return getAutoLaunchEnabled();
   });
 
   ipcMain.handle('set-auto-launch', (_, enabled) => {
-    app.setLoginItemSettings({ openAtLogin: enabled });
+    setAutoLaunchEnabled(enabled);
   });
 }
 
