@@ -1,25 +1,25 @@
-# Clippy
+# BoardClip
 
-Fast cross-platform clipboard history for desktop. Clippy runs as a tray app, opens with a global shortcut, and keeps your useful text and image clips searchable, pinnable, and quick to paste.
+Fast cross-platform clipboard history for desktop. BoardClip runs as a tray app, opens with a global shortcut, and keeps your useful text and image clips searchable, pinnable, and quick to paste.
 
 ## Install
 
 macOS / Linux:
 
 ```sh
-curl -fsSL https://clippy-sh.netlify.app/install.sh | sh
+curl -fsSL https://boardclip.sh/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://clippy-sh.netlify.app/install.ps1 | iex
+irm https://boardclip.sh/install.ps1 | iex
 ```
 
 Prefer to inspect first? Open the script URL in your browser, or download it before running:
 
 ```sh
-curl -fsSLO https://clippy-sh.netlify.app/install.sh
+curl -fsSLO https://boardclip.sh/install.sh
 sh install.sh
 ```
 
@@ -28,13 +28,13 @@ sh install.sh
 macOS / Linux:
 
 ```sh
-curl -fsSL https://clippy-sh.netlify.app/update.sh | sh
+curl -fsSL https://boardclip.sh/update.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://clippy-sh.netlify.app/update.ps1 | iex
+irm https://boardclip.sh/update.ps1 | iex
 ```
 
 Local checkout update scripts are also available:
@@ -55,7 +55,7 @@ update.bat
 - Pins and groups for keeping durable clips organized.
 - Native cloud sync through Google Drive, OneDrive, and iCloud folders.
 - Regex search, external editor support, and image export.
-- Local-first data: no hosted clipboard database or Clippy account.
+- Local-first data: no hosted clipboard database or BoardClip account.
 
 ## Keyboard Shortcuts
 
@@ -109,7 +109,7 @@ kill.bat
 
 ## Data
 
-Clippy stores data in the app checkout:
+BoardClip stores data in the app checkout:
 
 - `clipboard-history.json`
 - `clipboard-settings.json`

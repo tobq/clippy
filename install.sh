@@ -1,5 +1,5 @@
 #!/bin/bash
-echo "Installing Clippy (Electron)..."
+echo "Installing BoardClip (Electron)..."
 cd "$(dirname "$0")"
 npm install
 echo ""

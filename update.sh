@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "Updating Clippy..."
+echo "Updating BoardClip..."
 
 before="$(git rev-parse HEAD 2>/dev/null || true)"
 git pull --rebase --autostash

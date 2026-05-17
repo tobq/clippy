@@ -18,10 +18,10 @@ fi
 # Start in background
 if [ "$(uname)" = "Darwin" ] && [ -d "$ELECTRON_APP" ]; then
   open -na "$ELECTRON_APP" --args "$SCRIPT_DIR"
-  echo "Clippy started."
+  echo "BoardClip started."
 elif [ -x "$ELECTRON_BIN" ]; then
   nohup "$ELECTRON_BIN" "$SCRIPT_DIR" > /dev/null 2>&1 &
-  echo "Clippy started (PID $!)."
+  echo "BoardClip started (PID $!)."
 else
   echo "Electron is not installed. Run install.sh first."
   exit 1
@@ -29,6 +29,6 @@ fi
 
 sleep 0.5
 if ! pgrep -f "$ELECTRON_PATTERN" >/dev/null 2>&1; then
-  echo "ERROR: Failed to start Clippy."
+  echo "ERROR: Failed to start BoardClip."
   exit 1
 fi

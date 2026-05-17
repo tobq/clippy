@@ -13,7 +13,7 @@ const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const clipboardModel = require('./lib/clipboard-model');
 
-app.setName('Clippy');
+app.setName('BoardClip');
 
 // --- Paths ---
 const SCRIPT_DIR = __dirname;
@@ -27,7 +27,7 @@ function windowsStartupDir() {
 }
 
 function windowsDevStartupScriptPath() {
-  return path.join(windowsStartupDir(), 'Clippy.vbs');
+  return path.join(windowsStartupDir(), 'BoardClip.vbs');
 }
 
 function escapeVbsString(value) {
@@ -45,7 +45,7 @@ function windowsDevStartupScript() {
 
 function removeLegacyStartupShortcuts() {
   if (process.platform !== 'win32') return;
-  for (const name of ['ClipboardTray.lnk', 'clipboard-tray.lnk', 'clipboard_numpad.lnk', 'Clipboard Tray.vbs']) {
+  for (const name of ['ClipboardTray.lnk', 'clipboard-tray.lnk', 'clipboard_numpad.lnk', 'Clipboard Tray.vbs', 'Clippy.vbs']) {
     try { fs.rmSync(path.join(windowsStartupDir(), name), { force: true }); } catch {}
   }
 }
@@ -909,7 +909,7 @@ function createTray() {
   if (process.platform === 'darwin') trayIcon.setTemplateImage(true);
 
   tray = new Tray(trayIcon);
-  tray.setToolTip(`Clippy ${BUILD_INFO.label}`);
+  tray.setToolTip(`BoardClip ${BUILD_INFO.label}`);
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Open', click: showPopup },
@@ -1254,7 +1254,7 @@ app.whenReady().then(() => {
   setInterval(() => syncMerge(), 30000);
 
   const hotkey = process.platform === 'darwin' ? 'Cmd+Shift+V' : 'Win+V';
-  console.log(`Clippy running. ${hotkey} to open popup.`);
+  console.log(`BoardClip running. ${hotkey} to open popup.`);
 });
 
 app.on('will-quit', () => {

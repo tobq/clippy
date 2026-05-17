@@ -1,5 +1,5 @@
 @echo off
-echo Installing Clippy (Electron)...
+echo Installing BoardClip (Electron)...
 cd /d "%~dp0"
 call npm install
 echo.

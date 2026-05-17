@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking a look at Clippy.
+Thanks for taking a look at BoardClip.
 
 ## Setup
 
@@ -24,7 +24,7 @@ kill.bat
 - Prefer adapting shared helpers over adding platform-specific variants.
 - Keep Windows-specific input behavior in `lib/windows-*`.
 - Keep provider discovery in `lib/cloud-accounts.js`.
-- Avoid introducing a hosted service requirement; Clippy should stay local-first.
+- Avoid introducing a hosted service requirement; BoardClip should stay local-first.
 
 ## Before Opening a PR
 

@@ -4,7 +4,7 @@ setlocal
 set "APP_DIR=%~dp0"
 cd /d "%APP_DIR%"
 
-echo Updating Clippy...
+echo Updating BoardClip...
 
 where git >nul 2>&1
 if errorlevel 1 (

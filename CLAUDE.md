@@ -1,4 +1,4 @@
-# Clippy - CLAUDE.md
+# BoardClip - CLAUDE.md
 
 ## Architecture
 
@@ -77,7 +77,7 @@ Otherwise the key passes through so normal numpad typing works. Main thread call
 - **`kill.sh`/`kill.bat`** — match processes by this checkout's Electron binary to avoid killing other Electron apps (VS Code, Discord, etc.).
 - **Single-instance lock** via `app.requestSingleInstanceLock()` — second launch shows popup instead of starting duplicate
 - **Auto-launch**: `app.setLoginItemSettings({ openAtLogin: true })` — toggled in Settings UI
-- **Windows dev auto-launch**: un-packaged Electron writes `Clippy.vbs` into the Startup folder and the VBS runs `start.bat` hidden. Avoid pointing login startup directly at `electron.exe`; without a stable working directory it can launch bare Electron or fail to start the app module.
+- **Windows dev auto-launch**: un-packaged Electron writes `BoardClip.vbs` into the Startup folder and the VBS runs `start.bat` hidden. Avoid pointing login startup directly at `electron.exe`; without a stable working directory it can launch bare Electron or fail to start the app module.
 
 ## UI Patterns
 
