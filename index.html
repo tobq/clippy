@@ -66,8 +66,7 @@
   .star .mi { font-size:18px; }
   .star.active { color:var(--pin); }
   .star:hover { color:var(--pin); }
-  .meta-tag { padding:1px 6px; border:1px solid #333; border-radius:10px; color:var(--text-dim); font-size:10px; line-height:1.3; }
-  .meta-tag.numpad-tag { color:var(--green); border-style:dashed; }
+  .numpad-tag { color:var(--green); }
 
   .numpad-picker { display:none; position:absolute; top:100%; left:-4px; z-index:20; background:#0a0a0a; border:1px solid #333; border-radius:6px;
                    padding:3px; flex-direction:column; gap:2px; box-shadow:0 4px 12px rgba(0,0,0,.5); }
@@ -395,7 +394,7 @@ function buildItem(it, ri, nmap) {
     previewHtml = highlight(display, query);
     metaHtml = `<span>${ago(it.ts)}</span><span>${text.length.toLocaleString()} chars</span>`;
   }
-  if (np) metaHtml += `<span class="meta-tag numpad-tag">#${np}</span>`;
+  if (np) metaHtml += `<span class="numpad-tag">#${np}</span>`;
   if (pinned) metaHtml += `<span style="color:var(--pin)">pinned</span>`;
   for (const g of groupsOf(it)) {
     metaHtml += `<span style="color:var(--accent)">${esc(g)}</span>`;
@@ -444,9 +443,7 @@ function updateCount() {
   const total = items.length;
   const visible = filtered.length;
   const label = total === 1 ? 'item' : 'items';
-  countEl.textContent = (query || activeFilters.size)
-    ? `${visible} of ${total} ${label}`
-    : `${total} ${label}`;
+  countEl.textContent = `${visible} of ${total} ${label}`;
 }
 
 // --- Scroll-based lazy load ---

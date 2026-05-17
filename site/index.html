@@ -312,7 +312,19 @@
 
     async function copyCommand(id, trigger) {
       const text = document.getElementById(id).textContent.trim();
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
       const button = trigger.closest(".command-wrap").querySelector(".command-copy");
       const original = button.textContent;
       button.textContent = "Copied";
