@@ -16,4 +16,4 @@ if not exist "%ELECTRON_EXE%" (
 :: Start Electron in background from the app directory.
 cd /d "%APP_DIR%"
 start "" /B "%ELECTRON_EXE%" .
-echo Clipboard tray started.
+echo Clippy started.

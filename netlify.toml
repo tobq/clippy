@@ -1,0 +1,17 @@
+[build]
+  publish = "site"
+
+[[headers]]
+  for = "/*.sh"
+  [headers.values]
+    Content-Type = "text/x-shellscript; charset=utf-8"
+
+[[headers]]
+  for = "/*.ps1"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"
+
+[[headers]]
+  for = "/*.bat"
+  [headers.values]
+    Content-Type = "text/plain; charset=utf-8"

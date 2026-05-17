@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clippy - fast clipboard history for desktop</title>
+  <meta name="description" content="Clippy is a small cross-platform clipboard history tray app with search, pinning, numpad quick-paste, and native cloud sync.">
+  <link rel="icon" href="/favicon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">Clippy</a>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#features">Features</a>
+      <a href="https://github.com/tobq/clippy">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Clipboard history that stays out of your way</p>
+        <h1>Clippy</h1>
+        <p class="lede">A tiny tray app for keeping, finding, pinning, and quick-pasting the snippets you reuse all day.</p>
+        <div class="cta-row">
+          <a class="button primary" href="#install">Install from terminal</a>
+          <a class="button secondary" href="https://github.com/tobq/clippy">View source</a>
+        </div>
+      </div>
+      <div class="app-shot" aria-label="Clippy interface preview">
+        <div class="window">
+          <div class="window-head">
+            <span>12 items</span>
+            <span class="dot"></span>
+          </div>
+          <div class="search">Search...</div>
+          <div class="chips"><span>Pinned</span><span>Numpad</span><span>todo</span></div>
+          <div class="clip active"><b>3</b><p>Would it help if you added comprehensive test logs temporarily...</p></div>
+          <div class="clip"><b>*</b><p>npm run build && git push origin main</p></div>
+          <div class="clip"><b>img</b><p>Screenshot 2026-05-17 at 13.15.png</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="install" id="install">
+      <div>
+        <h2>Install</h2>
+        <p>Clippy installs from source into a per-user app folder, installs Electron dependencies, and starts the tray app.</p>
+      </div>
+      <div class="commands">
+        <label>macOS / Linux</label>
+        <pre><code>curl -fsSL https://clippy.sh/install.sh | sh</code></pre>
+        <label>Windows PowerShell</label>
+        <pre><code>irm https://clippy.sh/install.ps1 | iex</code></pre>
+        <p class="note">Prefer to inspect first? Download the script URL in your browser or with curl before running it.</p>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <h2>Built for repeated use</h2>
+      <div class="feature-grid">
+        <article>
+          <h3>Fast popup</h3>
+          <p>Open at your cursor, search immediately, paste with Enter, and get back to what you were doing.</p>
+        </article>
+        <article>
+          <h3>Numpad quick-paste</h3>
+          <p>Assign your most-used snippets to 1-9 and paste them from anywhere.</p>
+        </article>
+        <article>
+          <h3>Pins and groups</h3>
+          <p>Keep durable snippets, tag them, and filter the list without turning your clipboard into a filing cabinet.</p>
+        </article>
+        <article>
+          <h3>Native cloud sync</h3>
+          <p>Uses cloud folders you may already have: Google Drive, OneDrive, and iCloud.</p>
+        </article>
+        <article>
+          <h3>Text and images</h3>
+          <p>Captures both clipboard text and images, with content-addressed image storage.</p>
+        </article>
+        <article>
+          <h3>Open source</h3>
+          <p>Electron app, local data files, no account, and no hosted clipboard database.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="update" id="update">
+      <h2>Update</h2>
+      <div class="commands compact">
+        <label>macOS / Linux</label>
+        <pre><code>curl -fsSL https://clippy.sh/update.sh | sh</code></pre>
+        <label>Windows PowerShell</label>
+        <pre><code>irm https://clippy.sh/update.ps1 | iex</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Clippy is open source.</span>
+    <a href="https://github.com/tobq/clippy">GitHub</a>
+  </footer>
+</body>
+</html>

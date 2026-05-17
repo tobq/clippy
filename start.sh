@@ -18,10 +18,10 @@ fi
 # Start in background
 if [ "$(uname)" = "Darwin" ] && [ -d "$ELECTRON_APP" ]; then
   open -na "$ELECTRON_APP" --args "$SCRIPT_DIR"
-  echo "Clipboard tray started."
+  echo "Clippy started."
 elif [ -x "$ELECTRON_BIN" ]; then
   nohup "$ELECTRON_BIN" "$SCRIPT_DIR" > /dev/null 2>&1 &
-  echo "Clipboard tray started (PID $!)."
+  echo "Clippy started (PID $!)."
 else
   echo "Electron is not installed. Run install.sh first."
   exit 1
@@ -29,6 +29,6 @@ fi
 
 sleep 0.5
 if ! pgrep -f "$ELECTRON_PATTERN" >/dev/null 2>&1; then
-  echo "ERROR: Failed to start clipboard tray."
+  echo "ERROR: Failed to start Clippy."
   exit 1
 fi

@@ -1,60 +1,126 @@
-# Clipboard Tray
+# Clippy
 
-Cross-platform clipboard history manager. Runs as a system tray app with a frameless popup UI.
-
-## Features
-
-- **Hotkey popup** — Cmd+Shift+V (Mac) / Win+V (Windows), positioned at cursor
-- **Text & image history** — captures both, with automatic deduplication
-- **Numpad quick-paste (1-9)** — assign clipboard items to numpad slots, paste from anywhere
-- **Pin system** — star items to prevent auto-pruning, optionally assign a numpad shortcut
-- **Custom groups** — label/tag items, filter by group
-- **Native cloud sync** — merge-based sync across Google Drive, OneDrive, and iCloud folders
-- **Regex search** — toggle regex mode in the search bar
-- **Open in editor** — edit text items externally, changes saved back
-- **Save image to Downloads** — one-click copy with path on clipboard
-- **Clipboard juggling** — backup/set/paste/restore so your clipboard isn't overwritten
-- **Auto-pruning** — configurable max age and storage size
-- **Launch on startup** — toggle in settings
+Fast cross-platform clipboard history for desktop. Clippy runs as a tray app, opens with a global shortcut, and keeps your useful text and image clips searchable, pinnable, and quick to paste.
 
 ## Install
 
-```bash
-# macOS / Linux
-./install.sh
+macOS / Linux:
 
-# Windows
-install.bat
+```sh
+curl -fsSL https://clippy.sh/install.sh | sh
 ```
 
-## Usage
+Windows PowerShell:
 
-```bash
-# macOS / Linux
-./start.sh        # Kill existing + start in background
-./update.sh       # Pull latest, update deps if needed, relaunch
-./kill.sh          # Stop
+```powershell
+irm https://clippy.sh/install.ps1 | iex
+```
 
-# Windows
+Prefer to inspect first? Open the script URL in your browser, or download it before running:
+
+```sh
+curl -fsSLO https://clippy.sh/install.sh
+sh install.sh
+```
+
+## Update
+
+macOS / Linux:
+
+```sh
+curl -fsSL https://clippy.sh/update.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://clippy.sh/update.ps1 | iex
+```
+
+Local checkout update scripts are also available:
+
+```sh
+./update.sh
+```
+
+```bat
+update.bat
+```
+
+## Features
+
+- Hotkey popup: Cmd+Shift+V on macOS, Win+V on Windows.
+- Text and image history with automatic deduplication.
+- Numpad quick-paste slots 1-9 for snippets you reuse constantly.
+- Pins and groups for keeping durable clips organized.
+- Native cloud sync through Google Drive, OneDrive, and iCloud folders.
+- Regex search, external editor support, and image export.
+- Local-first data: no hosted clipboard database or Clippy account.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| Cmd+Shift+V / Win+V | Toggle popup |
+| Cmd+Numpad 1-9 / Win+Numpad 1-9 | Quick-paste slot |
+| 1-9 in empty search | Quick-paste slot |
+| Arrow keys | Navigate items |
+| Enter | Paste selected item |
+| Escape | Close popup |
+
+## Development
+
+Requirements:
+
+- Git
+- Node.js and npm
+
+Run from a checkout:
+
+```sh
+npm install
+npm test
+npm start
+```
+
+Useful local scripts:
+
+```sh
+./start.sh
+./update.sh
+./kill.sh
+```
+
+```bat
 start.bat
 update.bat
 kill.bat
 ```
 
-### Keyboard Shortcuts
+## Project Structure
 
-| Shortcut | Action |
-|---|---|
-| **Cmd+Shift+V** (Mac) / **Win+V** (Win) | Toggle popup |
-| **Cmd+Numpad 1-9** / **Win+Numpad 1-9** | Quick-paste slot |
-| **1-9 in search** | Quick-paste slot (when search empty) |
-| **Arrow keys** | Navigate items |
-| **Enter** | Paste selected item |
-| **Escape** | Close popup |
+- `main.js`: Electron main process, tray, shortcuts, clipboard polling, sync, IPC.
+- `index.html`: single-file renderer UI.
+- `preload.js`: safe renderer API bridge.
+- `lib/clipboard-model.js`: shared pure history/pin/group merge logic.
+- `lib/cloud-accounts.js`: Google Drive, OneDrive, and iCloud folder discovery.
+- `lib/windows-hook*`: Windows low-level keyboard hook for Win+V / Win+Numpad.
+- `site/`: static clippy.sh landing page and remote install/update scripts.
 
-## Tech
+## Data
 
-- **Electron** — cross-platform, single-instance, tray app
-- **IPC** via contextBridge (no HTTP server)
-- **Custom protocol** (`clip-img://`) for serving clipboard images
-- Data: `clipboard-history.json`, `clipboard-images/`, `clipboard-settings.json`
+Clippy stores data in the app checkout:
+
+- `clipboard-history.json`
+- `clipboard-settings.json`
+- `clipboard-images/`
+
+Cloud sync writes the same files into detected provider folders under `clipboard-tray/`. That folder name is retained for compatibility with earlier installs.
+
+## Contributing
+
+Issues and pull requests are welcome. Please run `npm test` before opening a PR and keep changes focused; most behavior should go through shared helpers in `lib/clipboard-model.js` instead of duplicating merge logic in UI or IPC code.
+
+## License
+
+MIT

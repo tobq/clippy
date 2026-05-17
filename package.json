@@ -1,8 +1,8 @@
 {
-  "name": "clipboard-tray",
-  "productName": "Clipboard Tray",
+  "name": "clippy",
+  "productName": "Clippy",
   "version": "2.0.0",
-  "description": "Clipboard history tray app with numpad quick-paste",
+  "description": "Cross-platform clipboard history tray app with numpad quick-paste and native cloud sync",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

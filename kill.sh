@@ -18,4 +18,4 @@ if pgrep -f "$SCRIPT_DIR/node_modules/electron" >/dev/null 2>&1; then
   sleep 0.5
 fi
 
-echo "Clipboard tray stopped."
+echo "Clippy stopped."

@@ -1,5 +1,5 @@
 @echo off
-echo Installing clipboard-tray (Electron)...
+echo Installing Clippy (Electron)...
 cd /d "%~dp0"
 call npm install
 echo.
