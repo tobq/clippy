@@ -188,6 +188,13 @@
     };
 
     const labels = ["work", "code", "support", "ideas", "legal", "sales", "design", "finance", "ops", "personal", "release", "meeting", "writing", "bug", "social"];
+    const numpadSlots = new Map([
+      [0, 1],
+      [5, 4],
+      [8, 7],
+      [22, 2],
+      [47, 9]
+    ]);
     const examples = [
       { text: "npm run build && git push origin main" },
       { text: "Yep, found the shape of it. Live prod mitigations first, then clean patch." },
@@ -228,7 +235,7 @@
         imageSrc: example.image || (isImage ? `https://picsum.photos/seed/boardclip-${index + 1}/150/86` : null),
         labels: primary === secondary ? [primary] : [primary, secondary],
         pinned: index % 9 === 0 || index < 4,
-        numpad: index < 8 ? index + 1 : null,
+        numpad: numpadSlots.get(index) || null,
         type: isImage ? "image" : "text",
         time: index < 8 ? "now" : `${index + 2}m`
       };
