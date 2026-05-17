@@ -300,7 +300,7 @@ function renderGroupFilters() {
   const hasImages = items.some(it => it.type === 'image');
   let html = '';
   if (hasPinned) html += `<span class="filter-tag builtin${activeFilters.has('__pinned__') ? ' active' : ''}" data-filter="__pinned__">Pinned</span>`;
-  if (hasNumbered) html += `<span class="filter-tag builtin${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__">Numbered</span>`;
+  if (hasNumbered) html += `<span class="filter-tag builtin${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__">Numpad</span>`;
   if (hasImages) html += `<span class="filter-tag builtin${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__">Images</span>`;
   html += groups.map(g =>
     `<span class="filter-tag${activeFilters.has(g) ? ' active' : ''}" data-group="${esc(g)}">${esc(g)}<span class="gtag-x mi" data-action="delete-group" data-group="${esc(g)}">close</span></span>`

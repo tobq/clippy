@@ -592,6 +592,7 @@ function createPopup() {
   if (process.platform === 'win32') {
     win.on('blur', () => {
       setTimeout(() => {
+        if (Date.now() < ignoreBlurUntil) return;
         if (win && !win.isDestroyed() && !win.isFocused()) win.hide();
       }, 150);
     });
@@ -599,6 +600,7 @@ function createPopup() {
 
   win.on('hide', () => {
     if (windowsHook) windowsHook.setPopupVisible(false);
+    stopClickAwayWatcher();
     // Clear any open modals/state in renderer
     win.webContents.executeJavaScript(`
       document.getElementById('confirmOverlay')?.classList.remove('show');
@@ -619,10 +621,45 @@ function createPopup() {
 // focus to it before pasting so the user's terminal/editor/etc. receives the
 // keystrokes instead of our now-hidden popup.
 let savedForegroundWindow = null;
+let clickAwayTimer = null;
+let clickAwayMouseWasDown = false;
+let ignoreBlurUntil = 0;
+
+function pointInWindowBounds(point, bounds) {
+  return point.x >= bounds.x && point.x < bounds.x + bounds.width &&
+         point.y >= bounds.y && point.y < bounds.y + bounds.height;
+}
+
+function stopClickAwayWatcher() {
+  if (clickAwayTimer) clearInterval(clickAwayTimer);
+  clickAwayTimer = null;
+}
+
+function startClickAwayWatcher() {
+  if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
+  stopClickAwayWatcher();
+  clickAwayMouseWasDown = winPaste.isMouseButtonDown();
+  clickAwayTimer = setInterval(() => {
+    if (!win || win.isDestroyed() || !win.isVisible()) {
+      stopClickAwayWatcher();
+      return;
+    }
+
+    const mouseDown = winPaste.isMouseButtonDown();
+    const mousePressed = mouseDown && !clickAwayMouseWasDown;
+    clickAwayMouseWasDown = mouseDown;
+    if (!mousePressed) return;
+
+    if (!pointInWindowBounds(screen.getCursorScreenPoint(), win.getBounds())) {
+      hidePopup();
+    }
+  }, 50);
+}
 
 function hidePopup() {
   if (win && !win.isDestroyed()) win.hide();
   if (windowsHook) windowsHook.setPopupVisible(false);
+  stopClickAwayWatcher();
 }
 
 function showPopup() {
@@ -636,6 +673,7 @@ function showPopup() {
   // can restore focus to it. Electron doesn't do this automatically.
   if (process.platform === 'win32') {
     savedForegroundWindow = winPaste.getForegroundWindow();
+    ignoreBlurUntil = Date.now() + 1200;
   }
 
   const cursor = screen.getCursorScreenPoint();
@@ -650,6 +688,7 @@ function showPopup() {
   win.moveTop();
   win.focus();
   if (windowsHook) windowsHook.setPopupVisible(true);
+  startClickAwayWatcher();
 }
 
 function setClipboardToItem(item) {
@@ -1009,10 +1048,10 @@ app.whenReady().then(() => {
   createTray();
   registerShortcuts();
 
-  setInterval(pollClipboard, 400);
-
   // Sync with shared folder on startup + every 30s
   syncMerge();
+  pollClipboard();
+  setInterval(pollClipboard, 400);
   setInterval(syncMerge, 30000);
 
   const hotkey = process.platform === 'darwin' ? 'Cmd+Shift+V' : 'Win+V';
