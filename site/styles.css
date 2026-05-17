@@ -580,27 +580,25 @@ code {
 }
 .demo-guide.show { opacity: 1; }
 .demo-guide-cursor {
-  width: 23px;
-  height: 31px;
+  width: 24px;
+  height: 32px;
   display: block;
-  background: #ffffff;
-  border: 2px solid #0f172a;
-  clip-path: polygon(0 0, 0 29px, 8px 22px, 13px 31px, 18px 28px, 13px 20px, 23px 20px);
-  filter:
-    drop-shadow(0 0 0 #0f172a)
-    drop-shadow(0 2px 0 #0f172a)
-    drop-shadow(0 16px 20px rgba(17, 24, 39, .42));
+  fill: #ffffff;
+  stroke: #18181b;
+  stroke-width: 2.25px;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 10px 18px rgba(24, 24, 27, .22));
 }
 .demo-guide-tip {
-  margin-top: 16px;
-  padding: 8px 10px;
-  color: #ffffff;
-  background: #111827;
-  border: 1px solid rgba(255, 255, 255, .72);
-  border-radius: 7px;
-  box-shadow: 0 14px 34px rgba(17, 24, 39, .32);
+  margin-top: 18px;
+  padding: 7px 10px;
+  color: #18181b;
+  background: #ffffff;
+  border: 1px solid var(--border-page);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 24px rgba(24, 24, 27, .1);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 650;
   white-space: nowrap;
 }
 
