@@ -297,16 +297,17 @@ function numpadMap() {
 // --- Group filter tags ---
 function renderGroupFilters() {
   const el = document.getElementById('groupFilters');
-  const hasPinned = items.some(it => isPinned(it));
-  const hasNumbered = items.some(it => numpadOf(it) != null);
-  const hasImages = items.some(it => it.type === 'image');
+  const pinnedCount = items.filter(it => isPinned(it)).length;
+  const numpadCount = items.filter(it => numpadOf(it) != null).length;
+  const imageCount = items.filter(it => it.type === 'image').length;
   let html = '';
-  if (hasPinned) html += `<span class="filter-tag builtin${activeFilters.has('__pinned__') ? ' active' : ''}" data-filter="__pinned__">Pinned</span>`;
-  if (hasNumbered) html += `<span class="filter-tag builtin${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__">Numpad</span>`;
-  if (hasImages) html += `<span class="filter-tag builtin${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__">Images</span>`;
-  html += groups.map(g =>
-    `<span class="filter-tag${activeFilters.has(g) ? ' active' : ''}" data-group="${esc(g)}">${esc(g)}<span class="gtag-x mi" data-action="delete-group" data-group="${esc(g)}">close</span></span>`
-  ).join('');
+  if (pinnedCount) html += `<span class="filter-tag builtin${activeFilters.has('__pinned__') ? ' active' : ''}" data-filter="__pinned__" title="${pinnedCount} pinned item${pinnedCount !== 1 ? 's' : ''}">Pinned</span>`;
+  if (numpadCount) html += `<span class="filter-tag builtin${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__" title="${numpadCount} macro${numpadCount !== 1 ? 's' : ''} set for numpad">Numpad</span>`;
+  if (imageCount) html += `<span class="filter-tag builtin${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__" title="${imageCount} image${imageCount !== 1 ? 's' : ''}">Images</span>`;
+  html += groups.map(g => {
+    const count = items.filter(it => isInGroup(it, g)).length;
+    return `<span class="filter-tag${activeFilters.has(g) ? ' active' : ''}" data-group="${esc(g)}" title="${count} item${count !== 1 ? 's' : ''} in ${esc(g)}">${esc(g)}<span class="gtag-x mi" data-action="delete-group" data-group="${esc(g)}">close</span></span>`;
+  }).join('');
   el.innerHTML = html;
 }
 
