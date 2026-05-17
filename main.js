@@ -244,6 +244,32 @@ function findHistoryItem(id) {
   return idx >= 0 ? history[idx] : null;
 }
 
+function updateTextItem(item, text) {
+  if (!item || item.type === 'image') return null;
+  const oldId = itemKey(item);
+  const next = { ...item, text: text || '', updatedAt: Date.now() };
+  next.id = legacyContentKey(next);
+
+  const existingIdx = history.findIndex(h => h !== item && itemKey(h) === next.id);
+  if (existingIdx >= 0) {
+    const existing = history[existingIdx];
+    existing.text = next.text;
+    existing.ts = Math.max(existing.ts || 0, next.ts || 0);
+    existing.updatedAt = Math.max(existing.updatedAt || 0, next.updatedAt || 0);
+    existing.pin = mergePins(existing.pin, next.pin, existing.updatedAt || existing.ts || 0, next.updatedAt || next.ts || 0);
+    const oldIdx = history.indexOf(item);
+    if (oldIdx >= 0) history.splice(oldIdx, 1);
+    addTombstone(oldId);
+    return existing;
+  }
+
+  item.text = next.text;
+  item.id = next.id;
+  item.updatedAt = next.updatedAt;
+  if (oldId !== item.id) addTombstone(oldId);
+  return item;
+}
+
 function getStorageBytes() {
   let total = 0;
   try { total = fs.statSync(DB_PATH).size; } catch {}
@@ -1008,8 +1034,8 @@ function openEditor(id) {
       const newText = fs.readFileSync(tmpPath, 'utf-8');
       // Use item reference — survives index shifts from deletes/adds
       if (newText !== originalText && item.text === originalText) {
-        item.text = newText;
-        item.updatedAt = Date.now();
+        updateTextItem(item, newText);
+        saveSettingsFile();
         saveHistory();
       }
     } catch {}
