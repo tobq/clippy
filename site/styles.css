@@ -272,24 +272,28 @@ code {
   width: 100%;
   min-width: 0;
   height: 34px;
-  padding: 7px 10px;
+  padding: 7px 4px 7px 10px;
   color: var(--ink);
   background: transparent;
   border: 0;
   outline: 0;
   font-size: 13px;
+  font-family: inherit;
 }
 #demo-search::placeholder { color: #65707d; }
 .search-actions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 4px;
+  gap: 1px;
+  padding-right: 4px;
 }
 .search-icon {
-  min-width: 24px;
+  width: 24px;
   height: 24px;
-  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   color: var(--dim);
   background: transparent;
   border: 0;
@@ -303,12 +307,12 @@ code {
   background: rgba(255,255,255,.06);
 }
 .clear-search {
-  visibility: hidden;
-  font-size: 14px;
+  display: none;
+  font: 700 18px/1 system-ui, sans-serif;
 }
-.clear-search.show { visibility: visible; }
+.clear-search.show { display: flex; }
 .rx-btn {
-  font: 700 11px/1 "Cascadia Code", Consolas, monospace;
+  font: 700 12px/1 "Cascadia Code", Consolas, monospace;
 }
 .chips {
   display: flex;
