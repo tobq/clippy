@@ -13,21 +13,26 @@ need() {
 }
 
 need git
-need npm
 
 if [ -d "$APP_DIR/.git" ]; then
-  echo "Updating existing BoardClip install in $APP_DIR"
+  echo "BoardClip is already installed in $APP_DIR"
+  echo "Running the standard update flow..."
   cd "$APP_DIR"
-  git pull --rebase --autostash
+  exec ./update.sh
+elif [ -e "$APP_DIR" ]; then
+  echo "Cannot install BoardClip: $APP_DIR already exists but is not a git checkout." >&2
+  echo "Move it aside or set BOARDCLIP_APP_DIR to another directory." >&2
+  exit 1
 else
+  need npm
   echo "Installing BoardClip to $APP_DIR"
   mkdir -p "$(dirname "$APP_DIR")"
   git clone "$REPO_URL" "$APP_DIR"
   cd "$APP_DIR"
 fi
 
-npm install
 chmod +x install.sh update.sh start.sh kill.sh 2>/dev/null || true
+./install.sh
 ./start.sh
 
 echo ""

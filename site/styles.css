@@ -226,6 +226,29 @@ code {
   color: var(--dim);
   font-size: 11px;
 }
+.icon-settings {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.icon-settings:hover,
+.icon-settings[aria-pressed="true"] {
+  color: var(--accent);
+  background: rgba(255,255,255,.06);
+}
+.icon-settings svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
 .search-row {
   display: flex;
   align-items: stretch;
@@ -274,23 +297,118 @@ code {
 }
 .settings-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
   margin: 0 14px 8px;
-  padding: 10px;
+  padding: 10px 12px;
   background: #0a0a0a;
   border: 1px solid #222;
   border-radius: 6px;
 }
-.settings-panel label {
+.settings-title {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-width: 0;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #181c21;
+}
+.settings-title strong {
+  color: #d5dde6;
+  font-size: 12px;
+}
+.settings-title span,
+.settings-section-mini > span {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 26px;
   color: #b5bec8;
   font-size: 11px;
 }
-.settings-panel input { accent-color: var(--accent); }
+.setting-row code {
+  padding: 2px 6px;
+  color: #dfe6ef;
+  background: #11151a;
+  border: 1px solid #20262d;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.toggle {
+  width: 28px;
+  height: 16px;
+  position: relative;
+  display: inline-block;
+  border-radius: 999px;
+  background: #252a31;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #8995a1;
+}
+.toggle.on {
+  background: rgba(167, 139, 250, .32);
+}
+.toggle.on::after {
+  left: 15px;
+  background: var(--accent);
+}
+.settings-section-mini {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.slot-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.slot-row b {
+  color: var(--green);
+  font: 700 11px/1 "Cascadia Code", Consolas, monospace;
+}
+.slot-row em {
+  overflow: hidden;
+  color: var(--muted);
+  font: normal 10px/1.3 "Cascadia Code", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-account-demo {
+  overflow: hidden;
+  color: #b5bec8;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.group-pill-row i {
+  padding: 2px 6px;
+  color: #84909d;
+  font-size: 10px;
+  font-style: normal;
+  border: 1px solid #20252c;
+  border-radius: 8px;
+}
 .clip-list {
   flex: 1;
   min-height: 0;

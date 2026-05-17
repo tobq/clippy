@@ -10,21 +10,27 @@ function Need($Command) {
 }
 
 Need git
-Need npm
 
 if (Test-Path (Join-Path $AppDir ".git")) {
-  Write-Host "Updating existing BoardClip install in $AppDir"
+  Write-Host "BoardClip is already installed in $AppDir"
+  Write-Host "Running the standard update flow..."
   Set-Location $AppDir
-  git pull --rebase --autostash
+  & (Join-Path $AppDir "update.bat")
+  exit $LASTEXITCODE
+} elseif (Test-Path $AppDir) {
+  throw "Cannot install BoardClip: $AppDir already exists but is not a git checkout. Move it aside or set BOARDCLIP_APP_DIR to another directory."
 } else {
+  Need npm
   Write-Host "Installing BoardClip to $AppDir"
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $AppDir) | Out-Null
   git clone $RepoUrl $AppDir
   Set-Location $AppDir
 }
 
-npm install
+& (Join-Path $AppDir "install.bat")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & (Join-Path $AppDir "start.bat")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host ""
 Write-Host "BoardClip is running."

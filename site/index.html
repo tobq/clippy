@@ -44,7 +44,7 @@
             </div>
           </div>
           <pre class="command-line"><code id="install-command">curl -fsSL https://boardclip.sh/install.sh | sh</code></pre>
-          <p class="note">Installs from the open-source repo into your user app folder, installs dependencies, and starts the tray app.</p>
+          <p class="note">Installs from the open-source repo into your user app folder. If BoardClip is already installed, this runs the standard update flow instead.</p>
         </div>
       </div>
 
@@ -54,22 +54,21 @@
             <span class="status-dot"></span>
             <strong>Live demo</strong>
           </div>
-          <div class="demo-actions">
-            <button type="button" id="demo-settings" aria-pressed="false">Settings</button>
-            <a href="https://github.com/tobq/boardclip">Source</a>
-          </div>
         </div>
 
         <div class="demo-window">
           <div class="window-head">
             <span id="clip-count">100 items</span>
-            <span id="sync-state">Google Drive + OneDrive + iCloud</span>
+            <button class="icon-settings" type="button" id="demo-settings" aria-pressed="false" aria-label="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.28 7.28 0 0 0-1.7-.98L14.5 2.42A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.5.42L9.12 5.07c-.61.24-1.18.56-1.7.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65a7.8 7.8 0 0 0 0 1.96l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.31.61.22l2.49-1c.52.4 1.09.73 1.7.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.24 1.18-.56 1.7-.98l2.49 1c.23.08.48 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/>
+              </svg>
+            </button>
           </div>
           <div class="search-row">
             <input id="demo-search" type="search" autocomplete="off" placeholder="Search clips, commands, labels...">
           </div>
           <div class="chips" id="filter-chips" aria-label="Filters">
-            <button class="chip active" type="button" data-filter="all">All</button>
             <button class="chip" type="button" data-filter="pinned">Pinned</button>
             <button class="chip" type="button" data-filter="numpad">Numpad</button>
             <button class="chip" type="button" data-filter="image">Images</button>
@@ -79,9 +78,35 @@
             <button class="chip" type="button" data-filter="ideas">ideas</button>
           </div>
           <div class="settings-panel" id="settings-panel" hidden>
-            <label><input type="checkbox" checked data-setting="sync"> Native cloud sync</label>
-            <label><input type="checkbox" checked data-setting="images"> Capture images</label>
-            <label><input type="checkbox" checked data-setting="numpad"> Numpad paste mode</label>
+            <div class="settings-title">
+              <strong>Settings</strong>
+              <span>Preview</span>
+            </div>
+            <div class="setting-row">
+              <span>Launch on startup</span>
+              <span class="toggle on"></span>
+            </div>
+            <div class="setting-row">
+              <span>Max age (days)</span>
+              <code>30</code>
+            </div>
+            <div class="setting-row">
+              <span>Max size (GB)</span>
+              <code>1.0</code>
+            </div>
+            <div class="settings-section-mini">
+              <span>Numpad shortcuts</span>
+              <div class="slot-row"><b>1</b><em>Image clip: product-mockup-01.png</em></div>
+              <div class="slot-row"><b>2</b><em>Yep, found the shape of it...</em></div>
+            </div>
+            <div class="settings-section-mini">
+              <span>Sync</span>
+              <div class="sync-account-demo">Google Drive · OneDrive · iCloud</div>
+            </div>
+            <div class="settings-section-mini">
+              <span>Groups</span>
+              <div class="group-pill-row"><i>work</i><i>code</i><i>support</i><i>ideas</i></div>
+            </div>
           </div>
           <div class="clip-list" id="clip-list" aria-live="polite"></div>
           <div class="demo-foot">
@@ -116,9 +141,20 @@
 
     <section class="update" id="update">
       <h2>Update</h2>
-      <div class="update-grid">
-        <pre><code>curl -fsSL https://boardclip.sh/update.sh | sh</code></pre>
-        <pre><code>irm https://boardclip.sh/update.ps1 | iex</code></pre>
+      <div class="install-card update-card" aria-label="Update BoardClip">
+        <div class="install-head">
+          <div>
+            <p class="mini-label">Update</p>
+            <h2 id="update-title">Recommended command</h2>
+          </div>
+          <div class="os-tabs" role="tablist" aria-label="Update operating system">
+            <button class="os-tab update-os active" type="button" data-os="mac">macOS</button>
+            <button class="os-tab update-os" type="button" data-os="win">Windows</button>
+            <button class="os-tab update-os" type="button" data-os="linux">Linux</button>
+          </div>
+        </div>
+        <pre class="command-line"><code id="update-command">curl -fsSL https://boardclip.sh/update.sh | sh</code></pre>
+        <p class="note">Pulls the latest source, refreshes dependencies, and relaunches the tray app.</p>
       </div>
     </section>
   </main>
@@ -133,6 +169,11 @@
       mac: "curl -fsSL https://boardclip.sh/install.sh | sh",
       linux: "curl -fsSL https://boardclip.sh/install.sh | sh",
       win: "irm https://boardclip.sh/install.ps1 | iex"
+    };
+    const updateCommands = {
+      mac: "curl -fsSL https://boardclip.sh/update.sh | sh",
+      linux: "curl -fsSL https://boardclip.sh/update.sh | sh",
+      win: "irm https://boardclip.sh/update.ps1 | iex"
     };
 
     const labels = ["work", "code", "support", "ideas", "legal", "sales", "design", "finance", "ops", "personal", "release", "meeting", "writing", "bug", "social"];
@@ -182,7 +223,7 @@
       };
     });
 
-    const state = { filter: "all", query: "" };
+    const state = { filters: new Set(), query: "" };
     const clipList = document.getElementById("clip-list");
     const clipCount = document.getElementById("clip-count");
     const search = document.getElementById("demo-search");
@@ -196,17 +237,26 @@
     }
 
     function setOS(os) {
-      document.querySelectorAll(".os-tab").forEach((button) => button.classList.toggle("active", button.dataset.os === os));
+      document.querySelectorAll(".os-tab:not(.update-os)").forEach((button) => button.classList.toggle("active", button.dataset.os === os));
       document.getElementById("install-command").textContent = installCommands[os];
       document.getElementById("install-title").textContent = os === "win" ? "Windows PowerShell" : os === "linux" ? "Linux terminal" : "macOS terminal";
     }
 
+    function setUpdateOS(os) {
+      document.querySelectorAll(".update-os").forEach((button) => button.classList.toggle("active", button.dataset.os === os));
+      document.getElementById("update-command").textContent = updateCommands[os];
+      document.getElementById("update-title").textContent = os === "win" ? "Windows PowerShell" : os === "linux" ? "Linux terminal" : "macOS terminal";
+    }
+
     function matchesFilter(clip) {
-      if (state.filter === "all") return true;
-      if (state.filter === "pinned") return clip.pinned;
-      if (state.filter === "numpad") return Boolean(clip.numpad);
-      if (state.filter === "image") return clip.type === "image";
-      return clip.labels.includes(state.filter);
+      if (!state.filters.size) return true;
+      for (const filter of state.filters) {
+        if (filter === "pinned" && !clip.pinned) return false;
+        if (filter === "numpad" && !clip.numpad) return false;
+        if (filter === "image" && clip.type !== "image") return false;
+        if (!["pinned", "numpad", "image"].includes(filter) && !clip.labels.includes(filter)) return false;
+      }
+      return true;
     }
 
     function matchesQuery(clip) {
@@ -239,14 +289,19 @@
       return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
     }
 
-    document.querySelectorAll(".os-tab").forEach((button) => {
+    document.querySelectorAll(".os-tab:not(.update-os)").forEach((button) => {
       button.addEventListener("click", () => setOS(button.dataset.os));
+    });
+    document.querySelectorAll(".update-os").forEach((button) => {
+      button.addEventListener("click", () => setUpdateOS(button.dataset.os));
     });
 
     document.querySelectorAll(".chip").forEach((button) => {
       button.addEventListener("click", () => {
-        state.filter = button.dataset.filter;
-        document.querySelectorAll(".chip").forEach((chip) => chip.classList.toggle("active", chip === button));
+        const filter = button.dataset.filter;
+        if (state.filters.has(filter)) state.filters.delete(filter);
+        else state.filters.add(filter);
+        button.classList.toggle("active", state.filters.has(filter));
         renderClips();
       });
     });
@@ -270,12 +325,9 @@
       event.currentTarget.setAttribute("aria-pressed", String(open));
     });
 
-    settingsPanel.addEventListener("change", () => {
-      const enabled = Array.from(settingsPanel.querySelectorAll("input:checked")).map((input) => input.dataset.setting);
-      document.getElementById("sync-state").textContent = enabled.includes("sync") ? "Google Drive + OneDrive + iCloud" : "Local only";
-    });
-
-    setOS(detectOS());
+    const detectedOS = detectOS();
+    setOS(detectedOS);
+    setUpdateOS(detectedOS);
     renderClips();
   </script>
 </body>
