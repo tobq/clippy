@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --page: #fafafa;
   --card: #ffffff;
   --foreground: #09090b;
@@ -7,6 +7,20 @@
   --border-page: #e4e4e7;
   --border-strong: #d4d4d8;
   --primary: #18181b;
+  --primary-hover: #27272a;
+  --primary-foreground: #fafafa;
+  --topbar-bg: rgba(250, 250, 250, .88);
+  --badge-bg: #f4f4f5;
+  --tabs-bg: #f4f4f5;
+  --command-bg: #09090b;
+  --command-border: #27272a;
+  --command-button-bg: #18181b;
+  --command-button-border: #3f3f46;
+  --command-button-hover: #27272a;
+  --demo-shadow: rgba(24, 24, 27, .24);
+  --hint-bg: #ffffff;
+  --hint-foreground: #18181b;
+  --hint-shadow: rgba(24, 24, 27, .1);
   --surface: #131313;
   --surface-2: #1a1a1a;
   --ink: var(--foreground);
@@ -19,6 +33,32 @@
   --pin: #f59e0b;
   --blue: #7dd3fc;
   --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #09090b;
+    --card: #0f0f11;
+    --foreground: #fafafa;
+    --muted-page: #a1a1aa;
+    --border-page: #27272a;
+    --border-strong: #3f3f46;
+    --primary: #fafafa;
+    --primary-hover: #e4e4e7;
+    --primary-foreground: #09090b;
+    --topbar-bg: rgba(9, 9, 11, .86);
+    --badge-bg: #18181b;
+    --tabs-bg: #18181b;
+    --command-bg: #030305;
+    --command-border: #27272a;
+    --command-button-bg: #18181b;
+    --command-button-border: #3f3f46;
+    --command-button-hover: #27272a;
+    --demo-shadow: rgba(0, 0, 0, .42);
+    --hint-bg: #18181b;
+    --hint-foreground: #fafafa;
+    --hint-shadow: rgba(0, 0, 0, .28);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -44,7 +84,7 @@ button, input { font: inherit; }
   justify-content: space-between;
   min-height: 58px;
   padding: 10px max(18px, calc((100vw - 1120px) / 2));
-  background: rgba(250, 250, 250, .88);
+  background: var(--topbar-bg);
   border-bottom: 1px solid var(--border-page);
   backdrop-filter: blur(16px);
 }
@@ -65,14 +105,14 @@ nav a:not(.github-button):hover { color: var(--foreground); }
   gap: 8px;
   min-height: 34px;
   padding: 0 12px;
-  color: #fafafa;
+  color: var(--primary-foreground);
   background: var(--primary);
   border: 1px solid var(--primary);
   border-radius: var(--radius);
   font-size: 13px;
   font-weight: 700;
 }
-.github-button:hover { background: #27272a; border-color: #27272a; }
+.github-button:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
 .github-button svg { width: 16px; height: 16px; fill: currentColor; }
 
 main {
@@ -91,8 +131,8 @@ main {
   width: fit-content;
   margin: 0 0 14px;
   padding: 4px 9px;
-  color: #52525b;
-  background: #f4f4f5;
+  color: var(--muted-page);
+  background: var(--badge-bg);
   border: 1px solid var(--border-page);
   border-radius: 999px;
   font-size: 12px;
@@ -142,7 +182,7 @@ h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2vw, 28px); let
 .os-tabs {
   display: inline-flex;
   padding: 3px;
-  background: #f4f4f5;
+  background: var(--tabs-bg);
   border: 1px solid var(--border-page);
   border-radius: var(--radius);
   flex-shrink: 0;
@@ -158,7 +198,7 @@ h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2vw, 28px); let
   font-size: 12px;
 }
 .os-tab.active {
-  color: #fafafa;
+  color: var(--primary-foreground);
   background: var(--primary);
   font-weight: 800;
 }
@@ -172,8 +212,8 @@ h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2vw, 28px); let
   margin: 0;
   padding: 13px 14px;
   padding-right: 72px;
-  background: #09090b;
-  border: 1px solid #27272a;
+  background: var(--command-bg);
+  border: 1px solid var(--command-border);
   border-radius: var(--radius);
   cursor: pointer;
 }
@@ -189,8 +229,8 @@ h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2vw, 28px); let
   height: 26px;
   padding: 0 9px;
   color: #d7dee8;
-  background: #18181b;
-  border: 1px solid #3f3f46;
+  background: var(--command-button-bg);
+  border: 1px solid var(--command-button-border);
   border-radius: 6px;
   cursor: pointer;
   font-size: 11px;
@@ -198,7 +238,7 @@ h2 { margin: 0; color: var(--foreground); font-size: clamp(20px, 2vw, 28px); let
 }
 .command-copy:hover {
   color: #fafafa;
-  background: #27272a;
+  background: var(--command-button-hover);
   border-color: #52525b;
 }
 code {
@@ -241,7 +281,7 @@ code {
   background: var(--surface);
   border: 1px solid #27272a;
   border-radius: 10px;
-  box-shadow: 0 22px 60px rgba(24, 24, 27, .24);
+  box-shadow: 0 22px 60px var(--demo-shadow);
   overflow: hidden;
 }
 .window-head {
@@ -592,11 +632,11 @@ code {
 .demo-guide-tip {
   margin-top: 18px;
   padding: 7px 10px;
-  color: #18181b;
-  background: #ffffff;
+  color: var(--hint-foreground);
+  background: var(--hint-bg);
   border: 1px solid var(--border-page);
   border-radius: var(--radius);
-  box-shadow: 0 10px 24px rgba(24, 24, 27, .1);
+  box-shadow: 0 10px 24px var(--hint-shadow);
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
