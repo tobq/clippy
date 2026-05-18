@@ -53,6 +53,11 @@ Local checkout update scripts are also available:
 update.bat
 ```
 
+Update scripts are production-safe by default: they fast-forward only and refuse
+to run if tracked app files have local edits. Runtime data files are ignored and
+do not block updates. For a developer checkout where you intentionally want Git
+to autostash local code changes, set `BOARDCLIP_UPDATE_ALLOW_DIRTY=1`.
+
 ## Features
 
 - Hotkey popup: Cmd+Shift+V on macOS, Win+V on Windows.

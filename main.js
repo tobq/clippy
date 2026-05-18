@@ -12,7 +12,7 @@ const winPaste = require('./lib/windows-paste');
 const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const clipboardModel = require('./lib/clipboard-model');
-const { createAutoUpdater } = require('./lib/auto-update');
+const { canAutoUpdate, createAutoUpdater } = require('./lib/auto-update');
 
 app.setName('BoardClip');
 
@@ -1033,6 +1033,10 @@ function setupIPC() {
     storage_bytes: getStorageBytes(),
     item_count: history.length,
     build_info: BUILD_INFO,
+    runtime_info: {
+      app_dir: SCRIPT_DIR,
+      auto_update: canAutoUpdate(SCRIPT_DIR, BUILD_INFO),
+    },
   }));
 
   ipcMain.handle('paste', (_, id) => {

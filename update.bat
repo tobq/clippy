@@ -15,7 +15,22 @@ if errorlevel 1 (
 set "BEFORE="
 for /f %%i in ('git rev-parse HEAD 2^>nul') do set "BEFORE=%%i"
 
-git pull --rebase --autostash
+set "DIRTY="
+for /f %%s in ('git status --porcelain --untracked-files^=no 2^>nul') do set "DIRTY=1"
+if defined DIRTY if not "%BOARDCLIP_UPDATE_ALLOW_DIRTY%"=="1" (
+  echo Refusing to update because tracked app files have local changes.
+  echo Runtime data files are ignored and do not block updates.
+  echo Commit/stash/revert local code changes, or rerun with:
+  echo   set BOARDCLIP_UPDATE_ALLOW_DIRTY=1
+  echo   update.bat
+  exit /b 1
+)
+
+if "%BOARDCLIP_UPDATE_ALLOW_DIRTY%"=="1" (
+  git pull --rebase --autostash
+) else (
+  git pull --ff-only
+)
 if errorlevel 1 (
   echo Update failed during git pull.
   exit /b 1

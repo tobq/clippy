@@ -6,7 +6,20 @@ cd "$(dirname "$0")"
 echo "Updating BoardClip..."
 
 before="$(git rev-parse HEAD 2>/dev/null || true)"
-git pull --rebase --autostash
+dirty="$(git status --porcelain --untracked-files=no 2>/dev/null || true)"
+if [ -n "$dirty" ] && [ "${BOARDCLIP_UPDATE_ALLOW_DIRTY:-}" != "1" ]; then
+  echo "Refusing to update because tracked app files have local changes." >&2
+  echo "Runtime data files are ignored and do not block updates." >&2
+  echo "Commit/stash/revert local code changes, or rerun with:" >&2
+  echo "  BOARDCLIP_UPDATE_ALLOW_DIRTY=1 ./update.sh" >&2
+  exit 1
+fi
+
+if [ "${BOARDCLIP_UPDATE_ALLOW_DIRTY:-}" = "1" ]; then
+  git pull --rebase --autostash
+else
+  git pull --ff-only
+fi
 after="$(git rev-parse HEAD 2>/dev/null || true)"
 
 need_install=0

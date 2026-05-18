@@ -73,7 +73,7 @@ Otherwise the key passes through so normal numpad typing works. Main thread call
 ## Scripts & Process Management
 
 - **`start.sh`/`start.bat`** — call kill script, verify no leftover processes, abort if kill failed, then launch Electron in background
-- **`update.sh`/`update.bat`** — one-step local update: `git pull --rebase --autostash`, install dependencies if Electron is missing or package files changed, then call the platform start script to relaunch
+- **`update.sh`/`update.bat`** — one-step production-safe update: refuse tracked local code edits by default, fast-forward from Git, install dependencies if Electron is missing or package files changed, then call the platform start script to relaunch. Set `BOARDCLIP_UPDATE_ALLOW_DIRTY=1` in a developer checkout to use `git pull --rebase --autostash`.
 - **`kill.sh`/`kill.bat`** — match processes by this checkout's Electron binary to avoid killing other Electron apps (VS Code, Discord, etc.).
 - **Single-instance lock** via `app.requestSingleInstanceLock()` — second launch shows popup instead of starting duplicate
 - **Auto-launch**: `app.setLoginItemSettings({ openAtLogin: true })` — toggled in Settings UI

@@ -184,7 +184,8 @@
   .sync-status.active { color:var(--green); }
   .sync-path { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:100%; overflow:hidden; font-size:10px; color:var(--text-dim); margin-top:3px; font-family:'Cascadia Code','Consolas',monospace; }
   .sync-path-line { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .build-info { font-size:10px; color:var(--text-dim); margin-top:12px; font-family:'Cascadia Code','Consolas',monospace; }
+  .build-info { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:100%; overflow:hidden; font-size:10px; color:var(--text-dim); margin-top:12px; font-family:'Cascadia Code','Consolas',monospace; }
+  .build-info-line { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 </style></head><body>
 
 <div class="main-view" id="mainView">
@@ -837,7 +838,21 @@ async function openSettings() {
     line.textContent = acc.path;
     syncPathEl.appendChild(line);
   }
-  document.getElementById('buildInfo').textContent = s.build_info ? `Build ${s.build_info.label}` : '';
+  const buildInfoEl = document.getElementById('buildInfo');
+  buildInfoEl.innerHTML = '';
+  if (s.build_info) {
+    const line = document.createElement('span');
+    line.className = 'build-info-line';
+    line.textContent = `Build ${s.build_info.label}${s.runtime_info && s.runtime_info.auto_update ? ' · auto-update on' : ''}`;
+    buildInfoEl.appendChild(line);
+  }
+  if (s.runtime_info && s.runtime_info.app_dir) {
+    const line = document.createElement('span');
+    line.className = 'build-info-line';
+    line.title = s.runtime_info.app_dir;
+    line.textContent = `App ${s.runtime_info.app_dir}`;
+    buildInfoEl.appendChild(line);
+  }
 
   // Numpad slots
   const slotsEl = document.getElementById('numpadSlots');
