@@ -1,0 +1,34 @@
+name: Deploy site to Netlify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - site/**
+      - netlify.toml
+      - .github/workflows/netlify.yml
+  workflow_dispatch:
+
+concurrency:
+  group: netlify-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      NETLIFY_SITE_ID: 4ff28f37-765a-4482-a5ea-162fd7513013
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Netlify token
+        if: env.NETLIFY_AUTH_TOKEN == ''
+        run: |
+          echo "::notice title=Netlify deploy skipped::Add NETLIFY_AUTH_TOKEN as a GitHub repository secret to enable automatic deploys."
+
+      - name: Deploy
+        if: env.NETLIFY_AUTH_TOKEN != ''
+        run: npx --yes netlify-cli@latest deploy --prod --dir site --site "$NETLIFY_SITE_ID" --auth "$NETLIFY_AUTH_TOKEN"
