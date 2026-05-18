@@ -964,6 +964,38 @@ function stopClickAwayWatcher() {
   clickAwayTimer = null;
 }
 
+function resetPopupRendererState() {
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return Promise.resolve(false);
+  return win.webContents.executeJavaScript(`
+    window.resetPopupState?.();
+    true;
+  `).catch(() => false);
+}
+
+function ensurePopupRendererResponsive() {
+  if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return;
+  if (win.webContents.isLoading()) return;
+
+  let settled = false;
+  const timer = setTimeout(() => {
+    if (settled || !win || win.isDestroyed() || !win.isVisible()) return;
+    console.log('BoardClip popup renderer did not respond after show; reloading.');
+    win.webContents.once('did-finish-load', () => resetPopupRendererState());
+    win.webContents.reloadIgnoringCache();
+  }, 800);
+  if (timer.unref) timer.unref();
+
+  resetPopupRendererState()
+    .then(() => {
+      settled = true;
+      clearTimeout(timer);
+    })
+    .catch(() => {
+      settled = true;
+      clearTimeout(timer);
+    });
+}
+
 function startClickAwayWatcher() {
   if (process.platform !== 'win32' || !win || win.isDestroyed()) return;
   stopClickAwayWatcher();
@@ -1013,10 +1045,17 @@ function showPopup() {
   const y = Math.min(Math.max(wy, cursor.y - 50), wy + wh - WIN_H);
 
   configureMacPopupWindow(win);
+  if (process.platform === 'darwin') {
+    win.setIgnoreMouseEvents(false);
+    win.setFocusable(true);
+    app.focus({ steal: true });
+  }
   win.setPosition(Math.round(x), Math.round(y));
   win.show();
   win.moveTop();
+  if (process.platform === 'darwin') app.focus({ steal: true });
   win.focus();
+  ensurePopupRendererResponsive();
   if (windowsHook) windowsHook.setPopupVisible(true);
   startClickAwayWatcher();
 }

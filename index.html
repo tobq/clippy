@@ -114,8 +114,8 @@
   .empty { text-align:center; color:var(--text-dim); padding:60px 0; font-size:13px; }
 
   /* Confirm dialog */
-  .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:30; align-items:center; justify-content:center; }
-  .overlay.show { display:flex; }
+  .overlay { display:none; pointer-events:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:30; align-items:center; justify-content:center; }
+  .overlay.show { display:flex; pointer-events:auto; }
   .dialog { background:var(--surface); border:1px solid var(--line-strong); border-radius:10px; padding:16px 20px; max-width:320px; width:90%; box-shadow:0 8px 24px var(--shadow); }
   .dialog h3 { font-size:13px; font-weight:500; margin-bottom:6px; }
   .dialog p { font-size:11px; color:var(--text-dim); margin-bottom:12px; font-family:'Cascadia Code',monospace; word-break:break-word; }
@@ -374,7 +374,7 @@ function applyFilter() {
   listEl.innerHTML = '';
   selectedIdx = -1;
   loadBatch();
-  if (!filtered.length) listEl.innerHTML = `<div class="empty">${q || activeFilters.size ? 'No matches' : 'Copy something to get started'}</div>`;
+  if (!filtered.length) listEl.innerHTML = `<div class="empty">${query || activeFilters.size ? 'No matches' : 'Copy something to get started'}</div>`;
 }
 
 function rerenderList() {
@@ -640,6 +640,7 @@ window.resetPopupState = function() {
   document.getElementById('promptOverlay')?.classList.remove('show');
   document.getElementById('settingsView')?.classList.remove('show');
   document.getElementById('mainView')?.classList.remove('hidden');
+  document.body.style.pointerEvents = '';
 };
 
 function tryAssignNumpad(slot, id) {
