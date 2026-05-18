@@ -357,7 +357,7 @@ function renderGroupFilters() {
   let html = '';
   if (pinnedCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__pinned__') ? ' active' : ''}" data-filter="__pinned__" title="${pinnedCount} pinned item${pinnedCount !== 1 ? 's' : ''}" aria-label="Pinned"><span class="mi">star</span></span>`;
   if (numpadCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__" title="${numpadCount} macro${numpadCount !== 1 ? 's' : ''} set for numpad" aria-label="Numpad">#</span>`;
-  if (imageCount) html += `<span class="filter-tag builtin${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__" title="${imageCount} image${imageCount !== 1 ? 's' : ''}">Images</span>`;
+  if (imageCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__" title="${imageCount} image${imageCount !== 1 ? 's' : ''}" aria-label="Images"><span class="mi">image</span></span>`;
   html += groups.map(g => {
     const count = items.filter(it => isInGroup(it, g)).length;
     return `<span class="filter-tag${activeFilters.has(g) ? ' active' : ''}" data-group="${esc(g)}" title="${count} item${count !== 1 ? 's' : ''} in ${esc(g)}">${esc(g)}<span class="gtag-x mi" data-action="delete-group" data-group="${esc(g)}">close</span></span>`;
