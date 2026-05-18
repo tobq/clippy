@@ -194,8 +194,11 @@
   .sync-btn { background:none; border:1px solid var(--line-strong); border-radius:4px; color:var(--text-dim); cursor:pointer;
               font-size:11px; padding:4px 8px; transition:all .15s; white-space:nowrap; flex-shrink:0; }
   .sync-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .sync-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .sync-btn:disabled:hover { border-color:var(--line-strong); color:var(--text-dim); }
   .sync-status { font-size:10px; color:var(--text-dim); margin-top:2px; }
   .sync-status.active { color:var(--green); }
+  .sync-status.error { color:var(--red); }
   .sync-path { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:100%; overflow:hidden; font-size:10px; color:var(--text-dim); margin-top:3px; font-family:'Cascadia Code','Consolas',monospace; }
   .sync-path-line { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .build-info { display:flex; flex-direction:column; gap:2px; min-width:0; max-width:100%; overflow:hidden; font-size:10px; color:var(--text-dim); margin-top:12px; font-family:'Cascadia Code','Consolas',monospace; }
@@ -256,6 +259,21 @@
       </div>
       <div class="sync-status" id="syncStatus"></div>
       <div class="sync-path" id="syncPath"></div>
+    </div>
+    <div class="settings-section">
+      <h3>Updates</h3>
+      <div class="sync-row">
+        <div class="sync-list">
+          <div class="sync-account">
+            <span class="sync-account-main">
+              <span class="sync-provider" id="updateBuild"></span>
+              <span class="sync-account-path" id="updateDetail"></span>
+            </span>
+          </div>
+        </div>
+        <button class="sync-btn" id="updateNow" title="Check for updates"><span class="mi" style="font-size:14px;vertical-align:middle">system_update_alt</span></button>
+      </div>
+      <div class="sync-status" id="updateStatus"></div>
     </div>
     <div class="settings-section">
       <h3>Groups</h3>
@@ -936,6 +954,63 @@ document.getElementById('syncNow').addEventListener('click', async () => {
   setTimeout(() => openSettings(), 500);
 });
 
+function shortCommit(sha) {
+  return sha ? String(sha).slice(0, 7) : '';
+}
+
+function updateStatusText(result) {
+  const latest = shortCommit(result && result.latest);
+  switch (result && result.status) {
+    case 'current':
+      return 'Up to date';
+    case 'updating':
+      return latest ? `Updating to ${latest}...` : 'Updating...';
+    case 'unsupported':
+      return 'Auto-update unavailable for this build';
+    case 'busy':
+      return 'Update check already running';
+    case 'error':
+      return result.error ? `Update check failed: ${result.error}` : 'Update check failed';
+    default:
+      return 'Could not determine latest version';
+  }
+}
+
+function setUpdateStatus(message, state = '') {
+  const updateStatus = document.getElementById('updateStatus');
+  updateStatus.textContent = message || '';
+  updateStatus.className = `sync-status${state ? ` ${state}` : ''}`;
+}
+
+function renderUpdateSettings(settings) {
+  const supported = !!(settings.runtime_info && settings.runtime_info.auto_update);
+  const updateBuild = document.getElementById('updateBuild');
+  const updateDetail = document.getElementById('updateDetail');
+  const updateNow = document.getElementById('updateNow');
+  const label = settings.build_info && settings.build_info.label ? settings.build_info.label : 'unknown';
+  updateBuild.textContent = `Build ${label}`;
+  updateDetail.textContent = supported
+    ? 'Auto-update enabled; checks on startup + every 4h'
+    : 'Auto-update unavailable for this build';
+  updateNow.disabled = !supported;
+  setUpdateStatus('', '');
+}
+
+document.getElementById('updateNow').addEventListener('click', async () => {
+  const updateNow = document.getElementById('updateNow');
+  updateNow.disabled = true;
+  setUpdateStatus('Checking...', 'active');
+  try {
+    const result = await window.api.checkForUpdates();
+    const state = result.ok || result.status === 'busy' ? 'active' : 'error';
+    setUpdateStatus(updateStatusText(result), state);
+    if (result.status !== 'updating') updateNow.disabled = false;
+  } catch (error) {
+    setUpdateStatus(`Update check failed: ${error && error.message ? error.message : 'unknown error'}`, 'error');
+    updateNow.disabled = false;
+  }
+});
+
 async function openSettings() {
   const s = await window.api.getSettings();
   const autoLaunchEl = document.getElementById('autoLaunch');
@@ -995,14 +1070,9 @@ async function openSettings() {
     line.textContent = acc.path;
     syncPathEl.appendChild(line);
   }
+  renderUpdateSettings(s);
   const buildInfoEl = document.getElementById('buildInfo');
   buildInfoEl.innerHTML = '';
-  if (s.build_info) {
-    const line = document.createElement('span');
-    line.className = 'build-info-line';
-    line.textContent = `Build ${s.build_info.label}${s.runtime_info && s.runtime_info.auto_update ? ' · auto-update on' : ''}`;
-    buildInfoEl.appendChild(line);
-  }
   if (s.runtime_info && s.runtime_info.app_dir) {
     const line = document.createElement('span');
     line.className = 'build-info-line';

@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   getCloudAccounts: () => ipcRenderer.invoke('get-cloud-accounts'),
   getSyncDiagnostics: () => ipcRenderer.invoke('get-sync-diagnostics'),
   syncNow: () => ipcRenderer.invoke('sync-now'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
   getColorScheme: () => ipcRenderer.invoke('get-color-scheme'),

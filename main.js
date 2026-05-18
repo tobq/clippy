@@ -1379,6 +1379,16 @@ function setupIPC() {
     await syncMerge();
   });
 
+  ipcMain.handle('check-for-updates', async () => {
+    const result = await autoUpdater.check({ manual: true });
+    return {
+      ok: !!result.ok,
+      status: result.status || 'unknown',
+      latest: result.latest || null,
+      error: result.error ? result.error.message : null,
+    };
+  });
+
   ipcMain.handle('get-auto-launch', () => {
     return getAutoLaunchEnabled();
   });
