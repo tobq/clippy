@@ -21,15 +21,6 @@ function New-Brush {
   return New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml($Hex))
 }
 
-function New-Pen {
-  param([string]$Hex, [float]$Width)
-  $pen = New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml($Hex)), $Width
-  $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-  $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-  $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
-  return $pen
-}
-
 function Add-RoundRect {
   param(
     [System.Drawing.Drawing2D.GraphicsPath]$Path,
@@ -61,25 +52,6 @@ function Fill-RoundRect {
   try {
     Add-RoundRect $path $X $Y $Width $Height $Radius
     $Graphics.FillPath($Brush, $path)
-  } finally {
-    $path.Dispose()
-  }
-}
-
-function Stroke-RoundRect {
-  param(
-    [System.Drawing.Graphics]$Graphics,
-    [System.Drawing.Pen]$Pen,
-    [float]$X,
-    [float]$Y,
-    [float]$Width,
-    [float]$Height,
-    [float]$Radius
-  )
-  $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-  try {
-    Add-RoundRect $path $X $Y $Width $Height $Radius
-    $Graphics.DrawPath($Pen, $path)
   } finally {
     $path.Dispose()
   }
@@ -122,32 +94,9 @@ function Save-AppIcon {
   }
 }
 
-function Save-TrayIcon {
-  param([int]$Size, [string]$OutputPath)
-  $surface = New-Bitmap $Size
-  $g = $surface.Graphics
-  try {
-    $scale = $Size / 32.0
-    $white = New-Pen "#f4f7fb" (2.7 * $scale)
-    $soft = New-Pen "#b9c2d0" (2.2 * $scale)
-
-    Stroke-RoundRect $g $white (8 * $scale) (7 * $scale) (16 * $scale) (20 * $scale) (3 * $scale)
-    $g.DrawLine($white, (12 * $scale), (12 * $scale), (20 * $scale), (12 * $scale))
-    $g.DrawLine($soft, (12 * $scale), (17 * $scale), (20 * $scale), (17 * $scale))
-    $g.DrawLine($soft, (12 * $scale), (22 * $scale), (18 * $scale), (22 * $scale))
-    Stroke-RoundRect $g $white (11 * $scale) (4 * $scale) (10 * $scale) (6 * $scale) (3 * $scale)
-
-    $surface.Bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
-  } finally {
-    $g.Dispose()
-    $surface.Bitmap.Dispose()
-  }
-}
-
 Save-AppIcon 512 (Join-Path $Root "assets\boardclip-icon.png")
 Save-AppIcon 512 (Join-Path $Root "icon@2x.png")
 Save-AppIcon 256 (Join-Path $Root "icon.png")
 Save-AppIcon 256 (Join-Path $Root "site\favicon.png")
-Save-TrayIcon 32 (Join-Path $Root "assets\tray-icon.png")
 
-Write-Host "Synced BoardClip app, tray, installer, and site icons"
+Write-Host "Synced BoardClip app, installer, and site icons"
