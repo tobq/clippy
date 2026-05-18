@@ -62,6 +62,11 @@ if defined NEED_INSTALL (
   echo Dependencies unchanged.
 )
 
+echo Creating Start Menu shortcut...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%APP_DIR%scripts\create-windows-shortcut.ps1" -AppDir "%APP_DIR%"
+if errorlevel 1 echo Warning: could not create Start Menu shortcut.
+echo.
+
 if "%BOARDCLIP_UPDATE_NO_START%"=="1" (
   echo Update applied.
   exit /b 0

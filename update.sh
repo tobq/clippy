@@ -42,6 +42,8 @@ else
   echo "Dependencies unchanged."
 fi
 
+sh scripts/create-macos-launcher.sh "$(pwd)" 2>/dev/null || true
+
 if [ "${BOARDCLIP_UPDATE_NO_START:-}" = "1" ]; then
   echo "Update applied."
   exit 0

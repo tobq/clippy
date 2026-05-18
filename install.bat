@@ -3,6 +3,10 @@ echo Installing BoardClip (Electron)...
 cd /d "%~dp0"
 call npm install
 echo.
+echo Creating Start Menu shortcut...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\create-windows-shortcut.ps1" -AppDir "%~dp0"
+if errorlevel 1 echo Warning: could not create Start Menu shortcut.
+echo.
 echo Setting up auto-start...
 :: Remove old Python startup shortcut if it exists
 del "%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ClipboardTray.lnk" >nul 2>&1

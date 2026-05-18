@@ -9,6 +9,7 @@ Everyday desktop builds are available from the website:
 [Download BoardClip](https://boardclip.app)
 
 Terminal install keeps a source checkout on your machine and reuses the same local lifecycle scripts for future updates. This path requires Git, and install/dependency updates also require npm.
+It also registers a normal launcher: `BoardClip` in the Windows Start Menu or `~/Applications/BoardClip.app` on macOS.
 
 macOS / Linux:
 
