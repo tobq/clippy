@@ -241,9 +241,9 @@ function saveHistory() {
   syncHookState();
 }
 
-// Reflect current history/popup state into the Windows hook's shared
-// buffer so the hook worker can synchronously decide whether to swallow
-// plain numpad keypresses.
+// Reflect current history state into the Windows hook's shared buffer so the
+// hook worker can synchronously decide whether closed-popup plain numpad
+// presses should quick-paste assigned slots.
 function syncHookState() {
   if (!windowsHook) return;
   const assigned = new Set();
