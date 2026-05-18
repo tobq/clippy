@@ -13,6 +13,7 @@ const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const clipboardModel = require('./lib/clipboard-model');
 const { createAutoUpdater, updateSupport } = require('./lib/auto-update');
+const syncPaths = require('./lib/sync-paths');
 
 app.setName('BoardClip');
 
@@ -207,12 +208,11 @@ function shortcutHasKeyAndModifier(shortcut) {
 }
 
 function normalizeSyncPath(syncPath) {
-  return path.normalize(String(syncPath || ''));
+  return syncPaths.normalizeSyncPath(syncPath);
 }
 
 function migrateSyncSettings() {
-  if (!Array.isArray(settings.sync_disabled_paths)) settings.sync_disabled_paths = [];
-  settings.sync_disabled_paths = [...new Set(settings.sync_disabled_paths.map(normalizeSyncPath).filter(Boolean))];
+  syncPaths.migrateSyncSettings(settings);
 }
 
 migrateSyncSettings();
@@ -511,6 +511,7 @@ function remoteSettingsPayload() {
   };
   delete remoteSave.numpad_slots;
   delete remoteSave.sync_path;
+  delete remoteSave.sync_custom_paths;
   delete remoteSave.sync_disabled_paths;
   delete remoteSave.show_shortcut;
   return remoteSave;
@@ -533,29 +534,22 @@ async function getCachedCloudAccounts({ force = false } = {}) {
   return cloudAccountsCache;
 }
 
-function syncAccountsWithLegacy(accounts) {
-  const result = [...accounts];
-  const legacyPath = normalizeSyncPath(settings.sync_path);
-  const legacyAvailable = legacyPath && (fs.existsSync(legacyPath) || fs.existsSync(path.dirname(legacyPath)));
-  if (legacyAvailable && !result.some(acc => normalizeSyncPath(acc.path) === legacyPath)) {
-    result.push({
-      provider: 'custom',
-      label: path.basename(legacyPath) || legacyPath,
-      email: '',
-      path: legacyPath,
-    });
-  }
-  return result;
+function addCustomSyncPath(syncPath) {
+  return syncPaths.addCustomSyncPath(settings, syncPath);
+}
+
+function syncAccountsWithCustom(accounts) {
+  return syncPaths.syncAccountsWithCustom(settings, accounts);
 }
 
 async function getCloudAccountsForSettings() {
-  const accounts = syncAccountsWithLegacy(await getCachedCloudAccounts({ force: true }));
+  const accounts = syncAccountsWithCustom(await getCachedCloudAccounts({ force: true }));
   const disabled = syncDisabledPathSet();
   return accounts.map(acc => ({ ...acc, enabled: !disabled.has(normalizeSyncPath(acc.path)) }));
 }
 
 async function getEnabledSyncPaths() {
-  const accounts = syncAccountsWithLegacy(await getCachedCloudAccounts());
+  const accounts = syncAccountsWithCustom(await getCachedCloudAccounts());
   const disabled = syncDisabledPathSet();
   return accounts
     .map(acc => normalizeSyncPath(acc.path))
@@ -563,7 +557,7 @@ async function getEnabledSyncPaths() {
 }
 
 function syncDisabledPathSet() {
-  return new Set((settings.sync_disabled_paths || []).map(normalizeSyncPath));
+  return syncPaths.syncDisabledPathSet(settings);
 }
 
 async function setSyncPathEnabled(syncPath, enabled) {
@@ -680,6 +674,7 @@ async function syncDiagnostics() {
     local: stateSummary(SCRIPT_DIR),
     sync_disabled_paths: settings.sync_disabled_paths || [],
     legacy_sync_path: settings.sync_path || '',
+    custom_sync_paths: settings.sync_custom_paths || [],
     accounts: accounts.map(acc => ({
       provider: acc.provider,
       label: acc.label,
@@ -1431,16 +1426,13 @@ function setupIPC() {
 
   ipcMain.handle('set-sync-path', async (_, syncPath) => {
     if (syncPath) {
-      settings.sync_path = syncPath;
-      await setSyncPathEnabled(syncPath, true);
+      const normalized = addCustomSyncPath(syncPath);
+      if (normalized) await setSyncPathEnabled(normalized, true);
       return;
     }
 
-    const accounts = await getCachedCloudAccounts({ force: true });
+    const accounts = syncAccountsWithCustom(await getCachedCloudAccounts({ force: true }));
     const disabled = syncDisabledPathSet();
-    const legacyPath = normalizeSyncPath(settings.sync_path);
-    if (legacyPath) disabled.add(legacyPath);
-    settings.sync_path = '';
     for (const acc of accounts) disabled.add(normalizeSyncPath(acc.path));
     settings.sync_disabled_paths = [...disabled];
     saveSettingsFile();
@@ -1453,8 +1445,8 @@ function setupIPC() {
       defaultPath: settings.sync_path || os.homedir(),
     });
     if (result.canceled || !result.filePaths || !result.filePaths[0]) return { canceled: true };
-    const syncPath = result.filePaths[0];
-    settings.sync_path = syncPath;
+    const syncPath = addCustomSyncPath(result.filePaths[0]);
+    if (!syncPath) return { canceled: true };
     await setSyncPathEnabled(syncPath, true);
     return { canceled: false, path: syncPath };
   });

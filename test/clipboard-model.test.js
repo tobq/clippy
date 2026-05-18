@@ -7,6 +7,7 @@ const path = require('path');
 const model = require('../lib/clipboard-model');
 const ui = require('../site/shared/clipboard-ui-core');
 const autoUpdate = require('../lib/auto-update');
+const syncPaths = require('../lib/sync-paths');
 
 function text(text, extra = {}) {
   const item = { type: 'text', text, ts: 1, ...extra };
@@ -182,6 +183,21 @@ function text(text, extra = {}) {
     assert(!new RegExp(`^\\s*\\.${selector}(?![-\\w])`, 'm').test(appHtml), `app must not redefine .${selector}`);
     assert(!new RegExp(`^\\s*\\.${selector}(?![-\\w])`, 'm').test(siteCss), `site css must not redefine .${selector}`);
   }
+}
+
+{
+  const settings = {
+    sync_path: '.',
+    sync_custom_paths: ['.', path.join(os.tmpdir(), 'boardclip-sync-a'), path.join(os.tmpdir(), 'boardclip-sync-a')],
+    sync_disabled_paths: ['.', path.join(os.tmpdir(), 'boardclip-sync-b')],
+  };
+  syncPaths.migrateSyncSettings(settings);
+  assert.deepStrictEqual(settings.sync_custom_paths, [path.join(os.tmpdir(), 'boardclip-sync-a')]);
+  assert.strictEqual(settings.sync_path, path.join(os.tmpdir(), 'boardclip-sync-a'));
+  assert.deepStrictEqual(settings.sync_disabled_paths, [path.join(os.tmpdir(), 'boardclip-sync-b')]);
+  assert.strictEqual(syncPaths.addCustomSyncPath(settings, '.'), '');
+  assert.strictEqual(syncPaths.addCustomSyncPath(settings, path.join(os.tmpdir(), 'boardclip-sync-c')), path.join(os.tmpdir(), 'boardclip-sync-c'));
+  assert(settings.sync_custom_paths.includes(path.join(os.tmpdir(), 'boardclip-sync-c')));
 }
 
 {
