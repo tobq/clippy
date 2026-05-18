@@ -12,6 +12,7 @@ const winPaste = require('./lib/windows-paste');
 const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const clipboardModel = require('./lib/clipboard-model');
+const { createAutoUpdater } = require('./lib/auto-update');
 
 app.setName('BoardClip');
 
@@ -75,6 +76,7 @@ function setAutoLaunchEnabled(enabled) {
 if (!fs.existsSync(IMG_DIR)) fs.mkdirSync(IMG_DIR, { recursive: true });
 
 const BUILD_INFO = getBuildInfo(SCRIPT_DIR);
+const autoUpdater = createAutoUpdater({ appDir: SCRIPT_DIR, buildInfo: BUILD_INFO });
 
 // --- AHK presets for first-run seeding ---
 const AHK_PRESETS = {
@@ -929,6 +931,7 @@ function createTray() {
     { label: 'Open', click: showPopup },
     { type: 'separator' },
     { label: `Build ${BUILD_INFO.label}`, enabled: false },
+    { label: 'Check for Updates', click: () => autoUpdater.check({ manual: true }) },
     { type: 'separator' },
     { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); } },
   ]);
@@ -1264,6 +1267,7 @@ app.whenReady().then(() => {
   createPopup();
   createTray();
   registerShortcuts();
+  autoUpdater.start();
 
   // Sync with shared folder on startup + every 30s
   syncMerge();

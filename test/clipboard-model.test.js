@@ -3,6 +3,7 @@
 const assert = require('assert');
 const model = require('../lib/clipboard-model');
 const ui = require('../site/shared/clipboard-ui-core');
+const autoUpdate = require('../lib/auto-update');
 
 function text(text, extra = {}) {
   const item = { type: 'text', text, ts: 1, ...extra };
@@ -61,6 +62,12 @@ function text(text, extra = {}) {
   assert.strictEqual(ui.addClipboardText(base, 'new clip')[0].text, 'new clip');
   assert.strictEqual(ui.touchItem(base, 'a', 30)[0].id, 'a');
   assert.strictEqual(ui.numpadMap(ui.assignNumpad(base, 'a', 2, 40))[2], 'a');
+}
+
+{
+  assert.strictEqual(autoUpdate.updateScriptPath('C:\\App', 'win32'), 'C:\\App\\update.bat');
+  assert.strictEqual(autoUpdate.updateScriptPath('/app', 'linux'), '/app/update.sh');
+  assert.strictEqual(autoUpdate.canAutoUpdate(__dirname, { fullCommit: 'abc', dirty: true }), false);
 }
 
 console.log('clipboard model tests passed');
