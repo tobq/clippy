@@ -386,6 +386,7 @@
       clipList.innerHTML = visible.slice(0, 18).map((clip, index) => Core.renderClipItem(clip, {
         selected: index === 0,
         imageSrc: item => item.imageSrc,
+        pickerHtml: Core.renderItemPicker(clip, { items: clips, groups: labels }),
       })).join("") || `<div class="empty">No clips found. Try a different search.</div>`;
       scheduleRelativeTimeRefresh();
     }
@@ -669,7 +670,28 @@
       const clipButton = event.target.closest(".item");
       if (!clipButton) return;
       const id = clipButton.dataset.id;
+      const groupButton = event.target.closest(".gp-btn");
+      if (groupButton) {
+        event.stopPropagation();
+        if (groupButton.dataset.action === "add-group") {
+          const nextGroup = "demo";
+          if (!labels.includes(nextGroup)) labels.push(nextGroup);
+          clips = Core.toggleGroup(clips, id, nextGroup);
+        } else if (groupButton.dataset.group) {
+          clips = Core.toggleGroup(clips, id, groupButton.dataset.group);
+        }
+        renderClips();
+        return;
+      }
+      const numpadButton = event.target.closest(".np-btn");
+      if (numpadButton) {
+        event.stopPropagation();
+        clips = Core.assignNumpad(clips, id, Number(numpadButton.dataset.n));
+        renderClips();
+        return;
+      }
       if (event.target.closest("[data-action='pin']")) {
+        event.stopPropagation();
         clips = Core.togglePin(clips, id);
         renderClips();
         return;

@@ -237,6 +237,38 @@
     if (options && typeof options.highlight === 'function') return options.highlight(display);
     return escapeHtml(display);
   }
+  function renderItemPicker(item, options) {
+    const opts = options || {};
+    const items = opts.items || [];
+    const groups = opts.groups || [];
+    const nmap = opts.numpadMap || numpadMap(items);
+    const np = numpadOf(item);
+    let npBtns = '';
+    for (let n = 1; n <= 9; n += 1) {
+      const cls = np === n ? 'current' : nmap[n] ? 'taken' : 'free';
+      let title = String(n);
+      if (nmap[n]) {
+        const slotItem = items.find((candidate) => itemId(candidate) === nmap[n]);
+        title = slotItem && slotItem.type === 'image'
+          ? `${n}: [image]`
+          : `${n}: ${String(slotItem && slotItem.text || '').replace(/\s+/g, ' ').slice(0, 80)}`;
+      }
+      npBtns += `<span class="np-btn ${cls}" data-n="${n}" title="${escapeHtml(title)}">${n}</span>`;
+    }
+    const itemGroups = new Set(groupsOf(item));
+    let gpBtns = groups.map((group) => {
+      const label = escapeHtml(group);
+      const cls = itemGroups.has(group) ? 'assigned' : 'available';
+      return `<span class="gp-btn ${cls}" data-group="${label}">${label}</span>`;
+    }).join('');
+    if (opts.showAddGroup !== false) {
+      gpBtns += '<span class="gp-btn add-group" data-action="add-group" title="New group"><span class="mi" style="font-size:14px">add</span></span>';
+    }
+    return `<div class="numpad-picker">
+      <div class="np-row">${npBtns}</div>
+      <div class="gp-row">${gpBtns}</div>
+    </div>`;
+  }
   function renderClipItem(item, options) {
     const opts = options || {};
     const id = itemId(item) || '';
@@ -419,6 +451,7 @@
     builtinFilterTitle,
     builtinFilterIconHtml,
     renderFilterBar,
+    renderItemPicker,
     renderClipItem,
     renderPopupShell,
     sortItems,

@@ -357,38 +357,12 @@ function scheduleRelativeTimeRefresh() {
 }
 
 function buildItem(it, ri, nmap) {
-  const pinned = isPinned(it);
-  const np = numpadOf(it);
   const id = itemId(it);
   const isImage = it.type === 'image';
   const el = document.createElement('div');
-
-  // Build numpad picker buttons
-  let npBtns = '';
-  for (let n = 1; n <= 9; n++) {
-    const cls = np === n ? 'current' : (n in nmap ? 'taken' : 'free');
-    let title = n;
-    if (n in nmap) {
-      const slotItem = itemById(nmap[n]);
-      title = slotItem && slotItem.type === 'image' ? `${n}: [image]` :
-        `${n}: ${((slotItem && slotItem.text) || '').replace(/\n/g,' ').slice(0,80)}`;
-    }
-    npBtns += `<span class="np-btn ${cls}" data-n="${n}" title="${esc(String(title))}">${n}</span>`;
-  }
+  const pickerHtml = Core.renderItemPicker(it, { items, groups, numpadMap: nmap });
 
   // Build group picker buttons — items can belong to multiple groups
-  let gpBtns = '';
-  const itemGroups = new Set(groupsOf(it));
-  groups.forEach(g => {
-    const cls = itemGroups.has(g) ? 'assigned' : 'available';
-    gpBtns += `<span class="gp-btn ${cls}" data-group="${esc(g)}">${esc(g)}</span>`;
-  });
-  gpBtns += `<span class="gp-btn add-group" data-action="add-group" title="New group"><span class="mi" style="font-size:14px">add</span></span>`;
-
-  const pickerHtml = `<div class="numpad-picker">
-        <div class="np-row">${npBtns}</div>
-        <div class="gp-row">${gpBtns}</div>
-      </div>`;
   const actionsHtml = `${!isImage && ((it.text||'').length > 120 || /\n/.test(it.text||'')) ? `<button class="icon-btn accent" data-action="expand" data-id="${esc(id)}" title="${expanded.has(id)?'Collapse':'Expand'}"><span class="mi">${expanded.has(id)?'unfold_less':'unfold_more'}</span></button>` : ''}${isImage ? `<button class="icon-btn accent" data-action="open-img" data-id="${esc(id)}" title="Open image"><span class="mi">open_in_new</span></button><button class="icon-btn accent" data-action="save-img" data-id="${esc(id)}" title="Copy to Downloads"><span class="mi">save</span></button>` : `<button class="icon-btn accent" data-action="edit" data-id="${esc(id)}" title="Open in editor"><span class="mi">open_in_new</span></button>`}<button class="icon-btn danger" data-action="del" data-id="${esc(id)}" title="Delete"><span class="mi">close</span></button>`;
   el.innerHTML = Core.renderClipItem(it, {
     expanded: expanded.has(id),

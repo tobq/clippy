@@ -146,6 +146,10 @@ function text(text, extra = {}) {
   assert(clipItem.includes('class="item has-pin"'));
   assert(clipItem.includes('class="numpad-tag">#2</span>'));
   assert(clipItem.includes('class="group-tag">code</span>'));
+  const picker = ui.renderItemPicker(base[1], { items: base, groups: ['code', 'work'] });
+  assert(picker.includes('class="np-btn current" data-n="2"'));
+  assert(picker.includes('class="gp-btn assigned" data-group="code"'));
+  assert(picker.includes('data-action="add-group"'));
   assert.deepStrictEqual(ui.filterItems(base, { filters: new Set(['work']), query: 'invoice', regex: false }).map(i => i.id), ['a']);
   assert.deepStrictEqual(ui.filterItemIndexes(base, { filters: new Set(['__numbered__', 'code']), query: 'macro', regex: false }), [1]);
   assert.deepStrictEqual(ui.filterItemIndexes(base, { filters: new Set(['__numbered__', 'work']), query: '', regex: false }), []);
@@ -178,6 +182,8 @@ function text(text, extra = {}) {
   assert(siteHtml.includes('Core.renderFilterBar'));
   assert(appHtml.includes('Core.renderClipItem'));
   assert(siteHtml.includes('Core.renderClipItem'));
+  assert(appHtml.includes('Core.renderItemPicker'));
+  assert(siteHtml.includes('Core.renderItemPicker'));
   assert(appHtml.includes('Core.renderPopupShell'));
   assert(siteHtml.includes('Core.renderPopupShell'));
   assert(!siteHtml.includes('window-head'));
