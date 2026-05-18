@@ -8,10 +8,10 @@
   "scripts": {
     "start": "electron .",
     "test": "node test/clipboard-model.test.js",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win nsis portable",
-    "dist:mac": "electron-builder --mac dmg zip",
-    "dist:linux": "electron-builder --linux AppImage deb"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win nsis portable --publish never",
+    "dist:mac": "electron-builder --mac dmg zip --publish never",
+    "dist:linux": "electron-builder --linux AppImage deb --publish never"
   },
   "build": {
     "appId": "app.boardclip.desktop",
@@ -50,6 +50,7 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
+      "icon": "icon@2x.png",
       "target": [
         "dmg",
         "zip"
@@ -57,6 +58,7 @@
       "category": "public.app-category.productivity"
     },
     "linux": {
+      "maintainer": "BoardClip contributors <hello@boardclip.app>",
       "target": [
         "AppImage",
         "deb"
