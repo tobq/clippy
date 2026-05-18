@@ -128,13 +128,15 @@ function text(text, extra = {}) {
 
 {
   const base = [
-    { id: 'a', type: 'text', text: 'alpha invoice', ts: 10, labels: ['work'], pin: null },
-    { id: 'b', type: 'text', text: 'beta macro', ts: 20, labels: ['code'], pin: { number: 2 } },
+    { id: 'a', type: 'text', text: 'alpha invoice', ts: 10, pin: { groups: ['work'] } },
+    { id: 'b', type: 'text', text: 'beta macro', ts: 20, pin: { number: 2, groups: ['code'] } },
   ];
+  assert.deepStrictEqual(ui.groupsOf({ id: 'legacy', type: 'text', text: 'legacy', ts: 1, labels: ['work'], pin: null }), []);
+  assert.deepStrictEqual(ui.groupsOf(base[0]), model.groupsOf(base[0]));
   assert.deepStrictEqual(ui.filterItems(base, { filters: new Set(['__numbered__']), query: '', regex: false }).map(i => i.id), ['b']);
   assert.deepStrictEqual(ui.BUILTIN_FILTERS.map(f => f.id), ['__pinned__', '__numbered__', '__images__']);
   assert.deepStrictEqual(ui.builtinFilters(base, new Set(['__numbered__'])).map(f => [f.id, f.count, f.active]), [
-    ['__pinned__', 1, false],
+    ['__pinned__', 2, false],
     ['__numbered__', 1, true],
   ]);
   const filterBar = ui.renderFilterBar({ items: base, groups: ['code'], activeFilters: new Set(['__numbered__']), query: '' });

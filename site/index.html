@@ -280,19 +280,19 @@
     const seedClips = Array.from({ length: 100 }, (_, index) => {
       const example = examples[index % examples.length];
       const text = example.text;
-      const primary = labels[index % labels.length];
-      const secondary = labels[(index * 3 + 4) % labels.length];
       const isImage = Boolean(example.image) || /screenshot|image|diagram|png/i.test(text) || index % 17 === 0;
+      const pin = {};
+      if (numpadSlots.has(index)) pin.number = numpadSlots.get(index);
+      if (index % 11 === 0 || index < 4) pin.groups = [labels[index % labels.length]];
+      if (index % 23 === 0) pin.groups = [...new Set([...(pin.groups || []), labels[(index * 3 + 4) % labels.length]])];
+      const hasPin = index % 19 === 0 || index < 2 || Object.keys(pin).length > 0;
       return {
         id: `demo:${index + 1}`,
         text: isImage && !/png|screenshot|image/i.test(text) ? `Image clip: product-mockup-${String(index + 1).padStart(2, "0")}.png` : text,
         imageSrc: example.image || (isImage ? `https://picsum.photos/seed/boardclip-${index + 1}/150/86` : null),
         width: isImage ? 150 : undefined,
         height: isImage ? 86 : undefined,
-        labels: primary === secondary ? [primary] : [primary, secondary],
-        pin: (index % 9 === 0 || index < 4 || numpadSlots.has(index))
-          ? { ...(numpadSlots.has(index) ? { number: numpadSlots.get(index) } : {}) }
-          : null,
+        pin: hasPin ? pin : null,
         type: isImage ? "image" : "text",
         ts: Math.floor(Date.now() / 1000) - (index < 8 ? index : (index + 2) * 60)
       };

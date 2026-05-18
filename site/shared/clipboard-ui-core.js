@@ -7,10 +7,7 @@
   function isPinned(item) { return item && item.pin != null; }
   function numpadOf(item) { return item && item.pin && typeof item.pin.number === 'number' ? item.pin.number : null; }
   function groupsOf(item) {
-    const groups = [];
-    if (item && item.pin && Array.isArray(item.pin.groups)) groups.push(...item.pin.groups);
-    if (item && Array.isArray(item.labels)) groups.push(...item.labels);
-    return [...new Set(groups)];
+    return item && item.pin && Array.isArray(item.pin.groups) ? [...new Set(item.pin.groups)] : [];
   }
   function isInGroup(item, group) { return groupsOf(item).includes(group); }
   function itemId(item) { return item && item.id; }
