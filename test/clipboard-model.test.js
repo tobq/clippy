@@ -45,10 +45,66 @@ function text(text, extra = {}) {
 }
 
 {
+  const local = text('star', { pin: null, ts: 200, updatedAt: 200 });
+  const remote = text('star', { pin: { updatedAt: 120 }, pinUpdatedAt: 120, ts: 100, updatedAt: 100 });
+  const merged = model.mergeHistories([local], [remote], {});
+  assert.strictEqual(model.isPinned(merged[0]), true);
+}
+
+{
   const local = text('clip', { pin: null, pinUpdatedAt: 300, ts: 200, updatedAt: 300 });
   const remote = text('clip', { pin: { groups: ['todo'], updatedAt: 120 }, pinUpdatedAt: 120, ts: 100, updatedAt: 100 });
   const merged = model.mergeHistories([local], [remote], {});
   assert.strictEqual(merged[0].pin, null);
+}
+
+{
+  const local = text('clip', {
+    pin: { number: 2, numberUpdatedAt: 200, groups: ['card'], groupsUpdatedAt: 300, updatedAt: 300 },
+    pinUpdatedAt: 300,
+  });
+  const remote = text('clip', {
+    pin: { number: 2, numberUpdatedAt: 200, groups: ['card', 'todo'], groupsUpdatedAt: 100, updatedAt: 100 },
+    pinUpdatedAt: 100,
+  });
+  const merged = model.mergeHistories([local], [remote], {});
+  assert.deepStrictEqual(merged[0].pin.groups, ['card']);
+  assert.strictEqual(merged[0].pin.number, 2);
+}
+
+{
+  const local = text('clip', {
+    pin: { groups: ['todo'], groupsUpdatedAt: 100, numberUpdatedAt: 300, updatedAt: 300 },
+    pinUpdatedAt: 300,
+  });
+  const remote = text('clip', {
+    pin: { number: 4, numberUpdatedAt: 100, groups: ['todo'], groupsUpdatedAt: 100, updatedAt: 100 },
+    pinUpdatedAt: 100,
+  });
+  const merged = model.mergeHistories([local], [remote], {});
+  assert.strictEqual(model.numpadSlotOf(merged[0]), null);
+  assert.deepStrictEqual(merged[0].pin.groups, ['todo']);
+}
+
+{
+  const local = text('clip', {
+    pin: { number: 1, numberUpdatedAt: 300, updatedAt: 300 },
+    pinUpdatedAt: 300,
+  });
+  const remote = text('clip', {
+    pin: { groups: ['todo'], groupsUpdatedAt: 100, updatedAt: 100 },
+    pinUpdatedAt: 100,
+  });
+  const merged = model.mergeHistories([local], [remote], {});
+  assert.deepStrictEqual(merged[0].pin.groups, ['todo']);
+  assert.strictEqual(merged[0].pin.number, 1);
+}
+
+{
+  const one = { number: 1, numberUpdatedAt: 10, updatedAt: 10 };
+  const two = { number: 2, numberUpdatedAt: 10, updatedAt: 10 };
+  assert.strictEqual(model.mergePins(one, two, 10, 10).number, 2);
+  assert.strictEqual(model.mergePins(two, one, 10, 10).number, 2);
 }
 
 {
@@ -78,6 +134,8 @@ function text(text, extra = {}) {
   assert.strictEqual(ui.numpadMap(ui.assignNumpad(base, 'a', 2, 40))[2], 'a');
   assert.strictEqual(ui.togglePin(base, 'a', 50).find(i => i.id === 'a').pinUpdatedAt, 50);
   assert.strictEqual(ui.togglePin([{ id: 'a', type: 'text', text: 'x', ts: 1, pin: { updatedAt: 1 } }], 'a', 60)[0].pinUpdatedAt, 60);
+  assert.strictEqual(ui.assignNumpad(base, 'a', 2, 70).find(i => i.id === 'a').pin.numberUpdatedAt, 70);
+  assert.strictEqual(ui.toggleGroup(base, 'a', 'todo', 80).find(i => i.id === 'a').pin.groupsUpdatedAt, 80);
   assert.strictEqual(ui.ago(100, 102), 'now');
   assert.strictEqual(ui.ago(100, 165), '1m');
   assert.strictEqual(ui.nextAgoDelayMs(100, 130), 1000);

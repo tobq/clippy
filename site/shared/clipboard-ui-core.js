@@ -124,9 +124,13 @@
     const ts = now || Math.floor(Date.now() / 1000);
     return sortItems((items || []).map((item) => itemId(item) === id ? { ...item, ts, updatedAt: ts } : item));
   }
-  function withPinTimestamp(item, ts) {
+  function withPinTimestamp(item, ts, field) {
     const next = { ...item, updatedAt: ts, pinUpdatedAt: ts };
-    if (next.pin) next.pin = { ...next.pin, updatedAt: ts };
+    if (next.pin) {
+      next.pin = { ...next.pin, updatedAt: ts };
+      if (field === 'number') next.pin.numberUpdatedAt = ts;
+      if (field === 'groups') next.pin.groupsUpdatedAt = ts;
+    }
     return next;
   }
   function togglePin(items, id, now) {
@@ -149,10 +153,10 @@
       if (itemId(next) === id) {
         const pin = ensurePin(next);
         pin.number = slot;
-        return withPinTimestamp(next, ts);
+        return withPinTimestamp(next, ts, 'number');
       }
       if (next.pin && typeof next.pin.number !== 'number' && !groupsOf(next).length) next.pin = null;
-      return changed ? withPinTimestamp(next, ts) : next;
+      return changed ? withPinTimestamp(next, ts, 'number') : next;
     });
   }
   function toggleGroup(items, id, group, now) {
@@ -166,7 +170,7 @@
       if (groups.size) next.pin.groups = [...groups];
       else delete next.pin.groups;
       if (typeof next.pin.number !== 'number' && !groups.size) next.pin = null;
-      return withPinTimestamp(next, ts);
+      return withPinTimestamp(next, ts, 'groups');
     });
   }
   function deleteItem(items, id) {

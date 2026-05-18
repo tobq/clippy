@@ -231,6 +231,14 @@ function findHistoryItem(id) {
   return idx >= 0 ? history[idx] : null;
 }
 
+function clonePin(pin) {
+  if (!pin) return pin;
+  return {
+    ...pin,
+    groups: Array.isArray(pin.groups) ? [...pin.groups] : pin.groups,
+  };
+}
+
 function updateTextItem(item, text) {
   if (!item || item.type === 'image') return null;
   const oldId = itemKey(item);
@@ -330,18 +338,18 @@ function migrateNumpad() {
         const match = history.find(h => h.type === 'image' && h.image === slot.image);
         if (match) {
           ensurePin(match).number = num;
-          touchPin(match, now);
+          touchPinNumber(match, now);
         } else {
-          history.unshift({ type: 'image', image: slot.image, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now } });
+          history.unshift({ type: 'image', image: slot.image, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
         }
       } else {
         const text = slot.text || '';
         const match = history.find(h => h.type !== 'image' && h.text === text);
         if (match) {
           ensurePin(match).number = num;
-          touchPin(match, now);
+          touchPinNumber(match, now);
         } else {
-          history.unshift({ type: 'text', text, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now } });
+          history.unshift({ type: 'text', text, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
         }
       }
     }
@@ -352,7 +360,7 @@ function migrateNumpad() {
     for (const num of [9, 8, 7, 6, 5, 4, 3, 2, 1]) {
       if (AHK_PRESETS[num]) {
         const now = Date.now();
-        history.unshift({ type: 'text', text: AHK_PRESETS[num], ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now } });
+        history.unshift({ type: 'text', text: AHK_PRESETS[num], ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
       }
     }
     saveHistory();
@@ -397,6 +405,16 @@ function touchPin(item, now = Date.now()) {
   item.updatedAt = now;
   item.pinUpdatedAt = now;
   if (item.pin) item.pin.updatedAt = now;
+}
+
+function touchPinNumber(item, now = Date.now()) {
+  touchPin(item, now);
+  if (item && item.pin) item.pin.numberUpdatedAt = now;
+}
+
+function touchPinGroups(item, now = Date.now()) {
+  touchPin(item, now);
+  if (item && item.pin) item.pin.groupsUpdatedAt = now;
 }
 
 function mergeItems(localItem, remoteItem) {
@@ -632,8 +650,10 @@ function addToHistory(entry, matchFn) {
   // Find existing, preserve pin metadata
   const existIdx = history.findIndex(matchFn);
   if (existIdx >= 0) {
-    if (history[existIdx].pin) entry.pin = history[existIdx].pin;
-    entry.id = itemKey(history[existIdx]);
+    const existing = history[existIdx];
+    entry.pin = clonePin(existing.pin);
+    if (existing.pinUpdatedAt) entry.pinUpdatedAt = existing.pinUpdatedAt;
+    entry.id = itemKey(existing);
     history.splice(existIdx, 1);
   }
   history.unshift(entry);
@@ -1047,6 +1067,9 @@ function setupIPC() {
       item.pin = {};
     } else if (typeof item.pin.number === 'number') {
       delete item.pin.number;
+      touchPinNumber(item);
+      saveHistory();
+      return;
     } else {
       item.pin = null;
     }
@@ -1062,12 +1085,12 @@ function setupIPC() {
     for (const h of history) {
       if (hasNumpadSlot(h, slot)) {
         delete h.pin.number;
-        touchPin(h, now);
+        touchPinNumber(h, now);
       }
     }
     const pin = ensurePin(item);
     pin.number = slot;
-    touchPin(item, now);
+    touchPinNumber(item, now);
     saveHistory();
   });
 
@@ -1076,7 +1099,7 @@ function setupIPC() {
     for (const h of history) {
       if (hasNumpadSlot(h, slot)) {
         delete h.pin.number;
-        touchPin(h);
+        touchPinNumber(h);
         saveHistory();
         break;
       }
@@ -1115,7 +1138,7 @@ function setupIPC() {
         if (h.pin && h.pin.groups) {
           h.pin.groups = h.pin.groups.filter(g => g !== name);
           if (h.pin.groups.length === 0) delete h.pin.groups;
-          touchPin(h, now);
+          touchPinGroups(h, now);
         }
       }
       saveSettingsFile();
@@ -1137,7 +1160,7 @@ function setupIPC() {
     } else {
       pin.groups.push(group);
     }
-    touchPin(item);
+    touchPinGroups(item);
     saveHistory();
   });
 
