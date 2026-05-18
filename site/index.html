@@ -7,6 +7,9 @@
   <meta name="description" content="BoardClip is a small cross-platform clipboard history tray app with search, pinning, numpad quick-paste, labels, image clips, and native cloud sync.">
   <link rel="canonical" href="https://boardclip.app/">
   <link rel="icon" href="/favicon.png">
+  <script>
+    document.documentElement.dataset.systemTheme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  </script>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -61,7 +64,7 @@
               </svg>
             </button>
           </div>
-          <div class="search-row">
+          <div class="search-row demo-main">
             <input id="demo-search" type="text" autocomplete="off" spellcheck="false" placeholder="Search...">
             <div class="search-actions">
               <button class="search-icon clear-search" id="demo-clear-search" type="button" title="Clear search" aria-label="Clear search">&times;</button>
@@ -70,28 +73,37 @@
           </div>
           <div class="settings-panel" id="demo-settings" hidden>
             <div class="settings-title">
+              <button class="demo-back" id="demo-settings-back" type="button" aria-label="Back">&larr;</button>
               <strong>Settings</strong>
-              <span>Local</span>
+              <span>Demo</span>
             </div>
-            <div class="setting-row">
+            <label class="setting-row">
               <span>Launch on startup</span>
+              <input class="demo-toggle-input" type="checkbox" checked>
               <span class="toggle on" aria-hidden="true"></span>
-            </div>
+            </label>
             <div class="setting-row">
               <span>Search mode</span>
               <code id="demo-search-mode">plain</code>
             </div>
             <div class="settings-section-mini">
-              <span>Sync folders</span>
-              <div class="sync-account-demo">Google Drive, OneDrive, iCloud</div>
+              <span>Current</span>
+              <div class="sync-account-demo" id="demo-usage">100 items, 0.1 MB</div>
+            </div>
+            <div class="settings-section-mini">
+              <span>Sync</span>
+              <div class="sync-account-demo">Google Drive, OneDrive, iCloud enabled</div>
             </div>
             <div class="settings-section-mini">
               <span>Numpad</span>
-              <div class="slot-row"><b>#1</b><em>npm run build && git push origin main</em></div>
-              <div class="slot-row"><b>#2</b><em>Support macro reply</em></div>
+              <div id="demo-numpad-slots"></div>
+            </div>
+            <div class="settings-section-mini">
+              <span>Groups</span>
+              <div id="demo-group-slots"></div>
             </div>
           </div>
-          <div class="chips" id="filter-chips" aria-label="Filters">
+          <div class="chips demo-main" id="filter-chips" aria-label="Filters">
             <button class="chip icon-chip" type="button" data-filter="pinned" title="Pinned" aria-label="Pinned">&#9733;</button>
             <button class="chip icon-chip" type="button" data-filter="numpad" title="Numpad" aria-label="Numpad">#</button>
             <button class="chip" type="button" data-filter="image">Images</button>
@@ -100,8 +112,8 @@
             <button class="chip" type="button" data-filter="support">support</button>
             <button class="chip" type="button" data-filter="ideas">ideas</button>
           </div>
-          <div class="clip-list" id="clip-list" aria-live="polite"></div>
-          <div class="demo-foot">
+          <div class="clip-list demo-main" id="clip-list" aria-live="polite"></div>
+          <div class="demo-foot demo-main">
             <span>Try: "invoice", "api", "meeting", "image", "thanks"</span>
             <button type="button" id="random-query">Shuffle search</button>
           </div>
@@ -165,7 +177,9 @@
     <a href="https://github.com/tobq/boardclip">github.com/tobq/boardclip</a>
   </footer>
 
+  <script src="/shared/clipboard-ui-core.js"></script>
   <script>
+    const Core = window.BoardClipCore;
     const osLabels = {
       mac: "macOS terminal",
       linux: "Linux terminal",
@@ -183,12 +197,6 @@
         win: "irm https://boardclip.sh/update.ps1 | iex"
       }
     };
-    const builtinFilters = {
-      pinned: (clip) => clip.pinned,
-      numpad: (clip) => Boolean(clip.numpad),
-      image: (clip) => clip.type === "image"
-    };
-
     const labels = ["work", "code", "support", "ideas", "legal", "sales", "design", "finance", "ops", "personal", "release", "meeting", "writing", "bug", "social"];
     const numpadSlots = new Map([
       [0, 1],
@@ -225,23 +233,25 @@
       { text: "npx --yes netlify-cli@latest deploy --prod --dir site" }
     ];
 
-    const clips = Array.from({ length: 100 }, (_, index) => {
+    const seedClips = Array.from({ length: 100 }, (_, index) => {
       const example = examples[index % examples.length];
       const text = example.text;
       const primary = labels[index % labels.length];
       const secondary = labels[(index * 3 + 4) % labels.length];
       const isImage = Boolean(example.image) || /screenshot|image|diagram|png/i.test(text) || index % 17 === 0;
       return {
-        id: index + 1,
+        id: `demo:${index + 1}`,
         text: isImage && !/png|screenshot|image/i.test(text) ? `Image clip: product-mockup-${String(index + 1).padStart(2, "0")}.png` : text,
         imageSrc: example.image || (isImage ? `https://picsum.photos/seed/boardclip-${index + 1}/150/86` : null),
         labels: primary === secondary ? [primary] : [primary, secondary],
-        pinned: index % 9 === 0 || index < 4,
-        numpad: numpadSlots.get(index) || null,
+        pin: (index % 9 === 0 || index < 4 || numpadSlots.has(index))
+          ? { ...(numpadSlots.has(index) ? { number: numpadSlots.get(index) } : {}) }
+          : null,
         type: isImage ? "image" : "text",
-        time: index < 8 ? "now" : `${index + 2}m`
+        ts: Math.floor(Date.now() / 1000) - (index < 8 ? index : (index + 2) * 60)
       };
     });
+    let clips = Core.sortItems(seedClips);
 
     const state = { filters: new Set(), query: "", regex: false };
     const clipList = document.getElementById("clip-list");
@@ -250,8 +260,12 @@
     const clearSearch = document.getElementById("demo-clear-search");
     const regexButton = document.getElementById("demo-regex");
     const settingsButton = document.getElementById("demo-settings-button");
+    const settingsBack = document.getElementById("demo-settings-back");
     const settingsPanel = document.getElementById("demo-settings");
     const searchMode = document.getElementById("demo-search-mode");
+    const demoUsage = document.getElementById("demo-usage");
+    const demoNumpadSlots = document.getElementById("demo-numpad-slots");
+    const demoGroupSlots = document.getElementById("demo-group-slots");
     const demoWindow = document.querySelector(".demo-window");
     const demoGuide = document.getElementById("demo-guide");
     let pointer = null;
@@ -274,35 +288,13 @@
       document.getElementById(`${kind}-title`).textContent = osLabels[os];
     }
 
-    function matchesFilter(clip) {
-      if (!state.filters.size) return true;
-      for (const filter of state.filters) {
-        const predicate = builtinFilters[filter] || ((item) => item.labels.includes(filter));
-        if (!predicate(clip)) return false;
-      }
-      return true;
-    }
-
-    function matchesQuery(clip) {
-      const q = state.query.trim();
-      if (!q) return true;
-      const text = `${clip.text} ${clip.labels.join(" ")} ${clip.type}`;
-      if (state.regex) {
-        try {
-          return new RegExp(q, "i").test(text);
-        } catch {
-          return false;
-        }
-      }
-      return text.toLowerCase().includes(q.toLowerCase());
-    }
-
     function renderClips() {
-      const visible = clips.filter((clip) => matchesFilter(clip) && matchesQuery(clip));
+      const visible = Core.filterItems(clips, state);
       clipCount.textContent = `${visible.length} of ${clips.length} items`;
+      renderDemoSettings();
       clipList.innerHTML = visible.slice(0, 18).map((clip, index) => `
-        <button class="clip ${clip.pinned ? "is-pinned" : ""} ${index === 0 ? "selected" : ""}" type="button">
-          <span class="clip-star">${clip.pinned ? "&#9733;" : "&#9734;"}</span>
+        <button class="clip ${Core.isPinned(clip) ? "is-pinned" : ""} ${index === 0 ? "selected" : ""}" type="button" data-id="${escapeHtml(Core.itemId(clip))}">
+          <span class="clip-star" data-action="pin" title="${Core.isPinned(clip) ? "Unpin" : "Pin"}">${Core.isPinned(clip) ? "&#9733;" : "&#9734;"}</span>
           <span class="clip-body">
             ${clip.type === "image" ? `
               <span class="thumb-row">
@@ -310,10 +302,27 @@
                 <span class="clip-text">${escapeHtml(clip.text)}</span>
               </span>
             ` : `<span class="clip-text">${escapeHtml(clip.text)}</span>`}
-            <span class="clip-meta">${clip.time} &middot; ${clip.type === "image" ? "image" : `${clip.text.length} chars`} ${clip.numpad ? `<em class="numpad-chip">#${clip.numpad}</em>` : ""} ${clip.labels.map((label) => `<em>${label}</em>`).join("")}</span>
+            <span class="clip-meta">${Core.ago(clip.ts)} &middot; ${clip.type === "image" ? "image" : `${clip.text.length} chars`} ${Core.numpadOf(clip) ? `<em class="numpad-chip">#${Core.numpadOf(clip)}</em>` : ""} ${Core.groupsOf(clip).map((label) => `<em>${escapeHtml(label)}</em>`).join("")}</span>
           </span>
         </button>
       `).join("") || `<div class="empty">No clips found. Try a different search.</div>`;
+    }
+
+    function renderDemoSettings() {
+      const nmap = Core.numpadMap(clips);
+      const bytes = clips.reduce((sum, clip) => sum + (clip.text || "").length, 0);
+      demoUsage.textContent = `${clips.length} items, ${(bytes / 1048576).toFixed(1)} MB`;
+      demoNumpadSlots.innerHTML = Array.from({ length: 9 }, (_, i) => {
+        const n = i + 1;
+        const id = nmap[n];
+        const clip = clips.find((item) => Core.itemId(item) === id);
+        const text = clip ? (clip.type === "image" ? "[image]" : clip.text.replace(/\s+/g, " ").slice(0, 52)) : "empty";
+        return `<div class="slot-row"><b>#${n}</b><em>${escapeHtml(text)}</em></div>`;
+      }).join("");
+      demoGroupSlots.innerHTML = labels.slice(0, 8).map((group) => {
+        const count = clips.filter((clip) => Core.isInGroup(clip, group)).length;
+        return `<div class="slot-row"><b>${escapeHtml(group)}</b><em>${count} items</em></div>`;
+      }).join("");
     }
 
     function escapeHtml(value) {
@@ -341,6 +350,29 @@
       window.setTimeout(() => {
         button.textContent = original;
       }, 1200);
+    }
+
+    async function writeBrowserClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const ok = document.execCommand("copy");
+      textarea.remove();
+      return ok;
+    }
+
+    function addCopiedText(text) {
+      const before = clips.length;
+      clips = Core.addClipboardText(clips, text);
+      if (clips.length !== before || clips[0]?.text === text) renderClips();
     }
 
     function targetPoint(selector) {
@@ -396,13 +428,21 @@
       button.addEventListener("click", () => setCommand("update", button.dataset.os));
     });
     document.querySelectorAll("[data-copy-command]").forEach((control) => {
-      control.addEventListener("click", () => copyCommand(control.dataset.copyCommand, control));
+      control.addEventListener("click", async () => {
+        await copyCommand(control.dataset.copyCommand, control);
+        addCopiedText(document.getElementById(control.dataset.copyCommand).textContent.trim());
+      });
       control.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          copyCommand(control.dataset.copyCommand, control);
+          copyCommand(control.dataset.copyCommand, control).then(() => addCopiedText(document.getElementById(control.dataset.copyCommand).textContent.trim()));
         }
       });
+    });
+
+    document.addEventListener("copy", () => {
+      const text = String(getSelection() || "").trim();
+      if (text) window.setTimeout(() => addCopiedText(text), 0);
     });
 
     document.querySelectorAll(".chip").forEach((button) => {
@@ -437,8 +477,32 @@
     settingsButton.addEventListener("click", () => {
       const open = settingsPanel.hidden;
       settingsPanel.hidden = !open;
+      demoWindow.classList.toggle("settings-open", open);
       settingsButton.classList.toggle("active", open);
       settingsButton.setAttribute("aria-expanded", String(open));
+    });
+    settingsBack.addEventListener("click", () => {
+      settingsPanel.hidden = true;
+      demoWindow.classList.remove("settings-open");
+      settingsButton.classList.remove("active");
+      settingsButton.setAttribute("aria-expanded", "false");
+      search.focus();
+    });
+
+    clipList.addEventListener("click", async (event) => {
+      const clipButton = event.target.closest(".clip");
+      if (!clipButton) return;
+      const id = clipButton.dataset.id;
+      if (event.target.closest("[data-action='pin']")) {
+        clips = Core.togglePin(clips, id);
+        renderClips();
+        return;
+      }
+      const clip = clips.find((item) => Core.itemId(item) === id);
+      if (!clip) return;
+      await writeBrowserClipboard(clip.type === "image" ? clip.text : clip.text || "");
+      clips = Core.touchItem(clips, id);
+      renderClips();
     });
 
     document.getElementById("random-query").addEventListener("click", () => {
@@ -462,6 +526,12 @@
     });
 
     const detectedOS = detectOS();
+    const themeQuery = matchMedia("(prefers-color-scheme: dark)");
+    function syncTheme() {
+      document.documentElement.dataset.systemTheme = themeQuery.matches ? "dark" : "light";
+    }
+    themeQuery.addEventListener("change", syncTheme);
+    syncTheme();
     setCommand("install", detectedOS);
     setCommand("update", detectedOS);
     renderClips();

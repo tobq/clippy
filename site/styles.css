@@ -284,6 +284,7 @@ code {
   box-shadow: 0 22px 60px var(--demo-shadow);
   overflow: hidden;
 }
+.demo-window.settings-open .demo-main { display: none; }
 .window-head {
   display: flex;
   align-items: center;
@@ -410,23 +411,40 @@ code {
   border-color: transparent;
 }
 .settings-panel {
+  flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  align-content: start;
   gap: 8px 10px;
-  margin: 0 14px 8px;
-  padding: 10px 12px;
-  background: #0a0a0a;
-  border: 1px solid #222;
-  border-radius: 6px;
+  min-height: 0;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--surface);
+  border: 0;
+  border-top: 1px solid #222;
+  border-radius: 0;
 }
 .settings-title {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-bottom: 6px;
-  border-bottom: 1px solid #181c21;
+  gap: 8px;
+  margin: -4px -6px 4px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #222;
 }
+.settings-title strong { flex: 1; }
+.demo-back {
+  width: 24px;
+  height: 24px;
+  color: var(--dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 15px;
+}
+.demo-back:hover { color: var(--accent); background: rgba(255,255,255,.06); }
 .settings-title strong {
   color: #d5dde6;
   font-size: 12px;
@@ -446,6 +464,11 @@ code {
   min-height: 26px;
   color: #b5bec8;
   font-size: 11px;
+}
+.demo-toggle-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
 }
 .setting-row code {
   padding: 2px 6px;
@@ -533,6 +556,7 @@ code {
   text-align: left;
   transition: background .1s;
 }
+.clip:active { transform: translateY(1px); }
 .clip:hover,
 .clip.selected { background: var(--surface-2); }
 .clip.is-pinned { border-left: 2px solid var(--pin); padding-left: 12px; }
@@ -542,6 +566,7 @@ code {
   line-height: 1;
   padding-top: 2px;
 }
+.clip-star:hover { color: var(--pin); }
 .clip.is-pinned .clip-star { color: var(--pin); }
 .clip-body {
   min-width: 0;
@@ -644,6 +669,93 @@ code {
 
 @media (prefers-reduced-motion: reduce) {
   .demo-guide { display: none; }
+}
+
+/* Page intentionally contrasts the OS theme; the product demo mirrors it. */
+:root[data-system-theme="dark"] {
+  --page: #fafafa;
+  --card: #ffffff;
+  --foreground: #09090b;
+  --muted-page: #71717a;
+  --border-page: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --primary: #18181b;
+  --primary-hover: #27272a;
+  --primary-foreground: #fafafa;
+  --topbar-bg: rgba(250, 250, 250, .88);
+  --badge-bg: #f4f4f5;
+  --tabs-bg: #f4f4f5;
+  --command-bg: #09090b;
+  --command-border: #27272a;
+  --command-button-bg: #18181b;
+  --command-button-border: #3f3f46;
+  --command-button-hover: #27272a;
+  --demo-shadow: rgba(24, 24, 27, .24);
+  --hint-bg: #ffffff;
+  --hint-foreground: #18181b;
+  --hint-shadow: rgba(24, 24, 27, .1);
+}
+
+:root[data-system-theme="light"] {
+  --page: #09090b;
+  --card: #0f0f11;
+  --foreground: #fafafa;
+  --muted-page: #a1a1aa;
+  --border-page: #27272a;
+  --border-strong: #3f3f46;
+  --primary: #fafafa;
+  --primary-hover: #e4e4e7;
+  --primary-foreground: #09090b;
+  --topbar-bg: rgba(9, 9, 11, .86);
+  --badge-bg: #18181b;
+  --tabs-bg: #18181b;
+  --command-bg: #030305;
+  --command-border: #27272a;
+  --command-button-bg: #18181b;
+  --command-button-border: #3f3f46;
+  --command-button-hover: #27272a;
+  --demo-shadow: rgba(0, 0, 0, .42);
+  --hint-bg: #18181b;
+  --hint-foreground: #fafafa;
+  --hint-shadow: rgba(0, 0, 0, .28);
+}
+
+:root[data-system-theme="light"] .demo-window {
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --ink: #18181b;
+  --muted: #71717a;
+  --dim: #71717a;
+  --line: #d4d4d8;
+  --line-soft: #e4e4e7;
+  --accent: #7c3aed;
+  --green: #059669;
+  --pin: #d97706;
+  border-color: #d4d4d8;
+}
+:root[data-system-theme="light"] .demo-window .search-row,
+:root[data-system-theme="light"] .demo-window .thumb {
+  background: #ffffff;
+  border-color: #d4d4d8;
+}
+:root[data-system-theme="light"] .demo-window .clip,
+:root[data-system-theme="light"] .demo-window .settings-panel,
+:root[data-system-theme="light"] .demo-window .settings-title,
+:root[data-system-theme="light"] .demo-window .demo-foot {
+  border-color: #e4e4e7;
+}
+:root[data-system-theme="light"] .demo-window .clip-text,
+:root[data-system-theme="light"] .demo-window .settings-title strong,
+:root[data-system-theme="light"] .demo-window .setting-row,
+:root[data-system-theme="light"] .demo-window .sync-account-demo {
+  color: #18181b;
+}
+:root[data-system-theme="light"] .demo-window .clip-meta em,
+:root[data-system-theme="light"] .demo-window .setting-row code,
+:root[data-system-theme="light"] .demo-window .demo-foot button {
+  color: #52525b;
+  background: #f4f4f5;
+  border-color: #e4e4e7;
 }
 
 section {

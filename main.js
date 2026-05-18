@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, clipboard, nativeImage,
-        ipcMain, protocol, screen, shell } = require('electron');
+        ipcMain, protocol, screen, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -724,6 +724,20 @@ const WIN_H = 520;
 let win = null;
 let tray = null;
 
+function currentColorScheme() {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+
+function appBackgroundColor() {
+  return nativeTheme.shouldUseDarkColors ? '#131313' : '#ffffff';
+}
+
+function notifyColorSchemeChanged() {
+  if (!win || win.isDestroyed()) return;
+  win.setBackgroundColor(appBackgroundColor());
+  win.webContents.send('color-scheme-changed', currentColorScheme());
+}
+
 function createPopup() {
   win = new BrowserWindow({
     width: WIN_W,
@@ -733,7 +747,7 @@ function createPopup() {
     show: false,
     skipTaskbar: true,
     resizable: false,
-    backgroundColor: '#131313',
+    backgroundColor: appBackgroundColor(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1165,6 +1179,8 @@ function setupIPC() {
   ipcMain.handle('set-auto-launch', (_, enabled) => {
     setAutoLaunchEnabled(enabled);
   });
+
+  ipcMain.handle('get-color-scheme', () => currentColorScheme());
 }
 
 // --- Global shortcuts ---
@@ -1208,6 +1224,8 @@ function registerShortcuts() {
     if (!registered) console.log(`Warning: Could not register ${key}`);
   }
 }
+
+nativeTheme.on('updated', notifyColorSchemeChanged);
 
 // --- Single instance lock ---
 const gotLock = app.requestSingleInstanceLock();

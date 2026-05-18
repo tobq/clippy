@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const model = require('../lib/clipboard-model');
+const ui = require('../site/shared/clipboard-ui-core');
 
 function text(text, extra = {}) {
   const item = { type: 'text', text, ts: 1, ...extra };
@@ -48,6 +49,18 @@ function text(text, extra = {}) {
     { name: 'gone', deletedAt: Date.now() },
   ]);
   assert.deepStrictEqual(merged.sort(), ['keep', 'remote']);
+}
+
+{
+  const base = [
+    { id: 'a', type: 'text', text: 'alpha invoice', ts: 10, labels: ['work'], pin: null },
+    { id: 'b', type: 'text', text: 'beta macro', ts: 20, labels: ['code'], pin: { number: 2 } },
+  ];
+  assert.deepStrictEqual(ui.filterItems(base, { filters: new Set(['__numbered__']), query: '', regex: false }).map(i => i.id), ['b']);
+  assert.deepStrictEqual(ui.filterItems(base, { filters: new Set(['work']), query: 'invoice', regex: false }).map(i => i.id), ['a']);
+  assert.strictEqual(ui.addClipboardText(base, 'new clip')[0].text, 'new clip');
+  assert.strictEqual(ui.touchItem(base, 'a', 30)[0].id, 'a');
+  assert.strictEqual(ui.numpadMap(ui.assignNumpad(base, 'a', 2, 40))[2], 'a');
 }
 
 console.log('clipboard model tests passed');

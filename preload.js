@@ -32,4 +32,10 @@ contextBridge.exposeInMainWorld('api', {
   syncNow: () => ipcRenderer.invoke('sync-now'),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setAutoLaunch: (enabled) => ipcRenderer.invoke('set-auto-launch', enabled),
+  getColorScheme: () => ipcRenderer.invoke('get-color-scheme'),
+  onColorSchemeChanged: (callback) => {
+    const listener = (_, scheme) => callback(scheme);
+    ipcRenderer.on('color-scheme-changed', listener);
+    return () => ipcRenderer.removeListener('color-scheme-changed', listener);
+  },
 });
