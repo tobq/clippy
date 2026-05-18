@@ -959,6 +959,21 @@ function shortCommit(sha) {
   return sha ? String(sha).slice(0, 7) : '';
 }
 
+function updateUnavailableText(reason) {
+  switch (reason) {
+    case 'dirty-checkout':
+      return 'Source checkout has local changes; run the public update command';
+    case 'not-git-checkout':
+      return 'Packaged build; source auto-update unavailable';
+    case 'missing-update-script':
+      return 'Source update script missing';
+    case 'unknown-build':
+      return 'Build commit unknown';
+    default:
+      return 'Source auto-update unavailable';
+  }
+}
+
 function updateStatusText(result) {
   const latest = shortCommit(result && result.latest);
   switch (result && result.status) {
@@ -971,7 +986,7 @@ function updateStatusText(result) {
     case 'relaunching':
       return latest ? `Updated to ${latest}; relaunching...` : 'Updated; relaunching...';
     case 'unsupported':
-      return 'Auto-update unavailable for this build';
+      return updateUnavailableText(result && result.reason);
     case 'busy':
       return 'Update check already running';
     case 'error':
@@ -988,6 +1003,7 @@ function setUpdateStatus(message, state = '') {
 }
 
 function renderUpdateSettings(settings) {
+  const support = settings.runtime_info && settings.runtime_info.update_support || {};
   const supported = !!(settings.runtime_info && settings.runtime_info.auto_update);
   const updateBuild = document.getElementById('updateBuild');
   const updateDetail = document.getElementById('updateDetail');
@@ -995,8 +1011,8 @@ function renderUpdateSettings(settings) {
   const label = settings.build_info && settings.build_info.label ? settings.build_info.label : 'unknown';
   updateBuild.textContent = `Build ${label}`;
   updateDetail.textContent = supported
-    ? 'Auto-update enabled; checks on startup + every 4h'
-    : 'Auto-update unavailable for this build';
+    ? 'Source auto-update enabled; requires Git; checks startup + every 4h'
+    : updateUnavailableText(support.reason);
   updateNow.disabled = !supported;
   setUpdateStatus('', '');
 }

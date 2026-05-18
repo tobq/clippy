@@ -7,4 +7,16 @@ if (-not (Test-Path (Join-Path $AppDir ".git"))) {
 }
 
 Set-Location $AppDir
-& (Join-Path $AppDir "update.bat")
+$PreviousAllowDirty = $env:BOARDCLIP_UPDATE_ALLOW_DIRTY
+$env:BOARDCLIP_UPDATE_ALLOW_DIRTY = "1"
+try {
+  & (Join-Path $AppDir "update.bat")
+  $Code = $LASTEXITCODE
+} finally {
+  if ($null -eq $PreviousAllowDirty) {
+    Remove-Item Env:\BOARDCLIP_UPDATE_ALLOW_DIRTY -ErrorAction SilentlyContinue
+  } else {
+    $env:BOARDCLIP_UPDATE_ALLOW_DIRTY = $PreviousAllowDirty
+  }
+}
+exit $Code

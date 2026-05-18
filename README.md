@@ -8,7 +8,7 @@ Everyday desktop builds are available from the website:
 
 [Download BoardClip](https://boardclip.app)
 
-Terminal install keeps a source checkout on your machine and reuses the same local lifecycle scripts for future updates.
+Terminal install keeps a source checkout on your machine and reuses the same local lifecycle scripts for future updates. This path requires Git, and install/dependency updates also require npm.
 
 macOS / Linux:
 
@@ -53,10 +53,12 @@ Local checkout update scripts are also available:
 update.bat
 ```
 
-Update scripts are production-safe by default: they fast-forward only and refuse
-to run if tracked app files have local edits. Runtime data files are ignored and
-do not block updates. For a developer checkout where you intentionally want Git
-to autostash local code changes, set `BOARDCLIP_UPDATE_ALLOW_DIRTY=1`.
+Local update scripts are production-safe by default: they fast-forward only and
+refuse to run if tracked app files have local edits. Runtime data files are
+ignored and do not block updates. The public update commands above set
+`BOARDCLIP_UPDATE_ALLOW_DIRTY=1`, so normal installs can repair a dirty checkout
+with Git autostash. For a developer checkout, set that variable yourself only
+when you intentionally want Git to autostash local code changes.
 
 ## Features
 

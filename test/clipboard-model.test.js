@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const model = require('../lib/clipboard-model');
 const ui = require('../site/shared/clipboard-ui-core');
 const autoUpdate = require('../lib/auto-update');
@@ -154,6 +157,17 @@ function text(text, extra = {}) {
   assert.strictEqual(autoUpdate.updateScriptPath('C:\\App', 'win32'), 'C:\\App\\update.bat');
   assert.strictEqual(autoUpdate.updateScriptPath('/app', 'linux'), '/app/update.sh');
   assert.strictEqual(autoUpdate.canAutoUpdate(__dirname, { fullCommit: 'abc', dirty: true }), false);
+  const appDir = fs.mkdtempSync(path.join(os.tmpdir(), 'boardclip-update-'));
+  try {
+    assert.deepStrictEqual(autoUpdate.updateSupport(appDir, { fullCommit: 'abc' }, 'linux'), { supported: false, reason: 'not-git-checkout' });
+    fs.mkdirSync(path.join(appDir, '.git'));
+    assert.deepStrictEqual(autoUpdate.updateSupport(appDir, { fullCommit: 'abc' }, 'linux'), { supported: false, reason: 'missing-update-script' });
+    fs.writeFileSync(path.join(appDir, 'update.sh'), '');
+    assert.deepStrictEqual(autoUpdate.updateSupport(appDir, { fullCommit: 'abc', dirty: true }, 'linux'), { supported: false, reason: 'dirty-checkout' });
+    assert.deepStrictEqual(autoUpdate.updateSupport(appDir, { fullCommit: 'abc', dirty: false }, 'linux'), { supported: true, reason: 'supported' });
+  } finally {
+    fs.rmSync(appDir, { recursive: true, force: true });
+  }
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['index.html']), 'reload');
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['site/shared/clipboard-ui-core.js']), 'reload');
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['main.js']), 'relaunch');

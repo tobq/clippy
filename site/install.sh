@@ -18,6 +18,7 @@ if [ -d "$APP_DIR/.git" ]; then
   echo "BoardClip is already installed in $APP_DIR"
   echo "Running the standard update flow..."
   cd "$APP_DIR"
+  export BOARDCLIP_UPDATE_ALLOW_DIRTY="${BOARDCLIP_UPDATE_ALLOW_DIRTY:-1}"
   exec ./update.sh
 elif [ -e "$APP_DIR" ]; then
   echo "Cannot install BoardClip: $APP_DIR already exists but is not a git checkout." >&2

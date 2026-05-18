@@ -11,4 +11,5 @@ if [ ! -d "$APP_DIR/.git" ]; then
 fi
 
 cd "$APP_DIR"
-./update.sh
+export BOARDCLIP_UPDATE_ALLOW_DIRTY="${BOARDCLIP_UPDATE_ALLOW_DIRTY:-1}"
+exec ./update.sh
