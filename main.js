@@ -21,6 +21,7 @@ const SCRIPT_DIR = __dirname;
 const DB_PATH = path.join(SCRIPT_DIR, 'clipboard-history.json');
 const SETTINGS_PATH = path.join(SCRIPT_DIR, 'clipboard-settings.json');
 const IMG_DIR = path.join(SCRIPT_DIR, 'clipboard-images');
+const APP_ICON_PATH = path.join(SCRIPT_DIR, 'icon.png');
 
 function windowsStartupDir() {
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
@@ -790,6 +791,7 @@ function createPopup() {
     skipTaskbar: true,
     resizable: false,
     backgroundColor: appBackgroundColor(),
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -955,10 +957,9 @@ async function pasteAndHide(id) {
 }
 
 function createTray() {
-  const iconPath = path.join(__dirname, 'icon.png');
   let trayIcon;
-  if (fs.existsSync(iconPath)) {
-    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  if (fs.existsSync(APP_ICON_PATH)) {
+    trayIcon = nativeImage.createFromPath(APP_ICON_PATH).resize({ width: 16, height: 16 });
   } else {
     trayIcon = nativeImage.createEmpty();
   }

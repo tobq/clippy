@@ -97,6 +97,12 @@ npm run dist
 
 Platform-specific package scripts are available as `npm run dist:win`, `npm run dist:mac`, and `npm run dist:linux`. Tagged releases matching `v*` are built by GitHub Actions and attached to the GitHub release.
 
+Sync the shared app, tray, installer, and site icons after changing `assets/boardclip-icon.png`:
+
+```sh
+npm run sync:icons
+```
+
 Useful local scripts:
 
 ```sh
