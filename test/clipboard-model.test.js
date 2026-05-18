@@ -8,6 +8,8 @@ const model = require('../lib/clipboard-model');
 const ui = require('../site/shared/clipboard-ui-core');
 const autoUpdate = require('../lib/auto-update');
 const syncPaths = require('../lib/sync-paths');
+const clipboardCapture = require('../lib/clipboard-capture');
+const windowsClipboard = require('../lib/windows-clipboard');
 
 function text(text, extra = {}) {
   const item = { type: 'text', text, ts: 1, ...extra };
@@ -211,6 +213,61 @@ function text(text, extra = {}) {
   assert.strictEqual(syncPaths.addCustomSyncPath(settings, '.'), '');
   assert.strictEqual(syncPaths.addCustomSyncPath(settings, path.join(os.tmpdir(), 'boardclip-sync-c')), path.join(os.tmpdir(), 'boardclip-sync-c'));
   assert(settings.sync_custom_paths.includes(path.join(os.tmpdir(), 'boardclip-sync-c')));
+}
+
+{
+  assert(clipboardCapture.formatsSuggestImage(['image/png']));
+  assert(clipboardCapture.formatsSuggestImage(['FileDrop']));
+  assert(clipboardCapture.formatsSuggestImage(['FileGroupDescriptorW', 'FileContents']));
+  assert(clipboardCapture.formatsSuggestFileTransfer(['FileGroupDescriptorW', 'FileContents']));
+  assert(!clipboardCapture.formatsSuggestFileTransfer(['image/png']));
+  assert(!clipboardCapture.formatsSuggestImage(['text/plain']));
+  assert.strictEqual(clipboardCapture.formatsKey(['b', 'a']), 'a|b');
+
+  const emptyImage = {
+    isEmpty: () => true,
+    toPNG: () => Buffer.alloc(0),
+    getSize: () => ({ width: 0, height: 0 }),
+  };
+  const capturedImage = {
+    isEmpty: () => false,
+    toPNG: () => Buffer.from('png-bytes'),
+    getSize: () => ({ width: 12, height: 8 }),
+  };
+  const fakeNativeImage = {
+    createFromBuffer: buffer => buffer && buffer.length ? capturedImage : emptyImage,
+  };
+  let readImageCalls = 0;
+  const fakeClipboard = {
+    availableFormats: () => ['FileDrop'],
+    readImage: () => {
+      readImageCalls += 1;
+      return emptyImage;
+    },
+  };
+  const captured = clipboardCapture.readClipboardImage({
+    clipboard: fakeClipboard,
+    nativeImage: fakeNativeImage,
+    platform: 'win32',
+    windowsClipboard: {
+      readImageCandidate: () => ({ buffer: Buffer.from('fake-image'), source: 'win32-file', path: 'C:\\tmp\\photo.png' }),
+    },
+  });
+  assert.strictEqual(captured.source, 'win32-file');
+  assert.strictEqual(captured.width, 12);
+  assert.strictEqual(captured.height, 8);
+  assert.strictEqual(captured.path, 'C:\\tmp\\photo.png');
+  assert.strictEqual(readImageCalls, 0);
+
+  const dib = Buffer.alloc(40);
+  dib.writeUInt32LE(40, 0);
+  dib.writeInt32LE(1, 4);
+  dib.writeInt32LE(1, 8);
+  dib.writeUInt16LE(1, 12);
+  dib.writeUInt16LE(32, 14);
+  const bmp = windowsClipboard.dibToBmpBuffer(dib);
+  assert.strictEqual(bmp.toString('ascii', 0, 2), 'BM');
+  assert.strictEqual(bmp.readUInt32LE(10), 54);
 }
 
 {

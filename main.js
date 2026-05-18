@@ -12,6 +12,7 @@ const winPaste = require('./lib/windows-paste');
 const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const clipboardModel = require('./lib/clipboard-model');
+const clipboardCapture = require('./lib/clipboard-capture');
 const { createAutoUpdater, updateSupport } = require('./lib/auto-update');
 const syncPaths = require('./lib/sync-paths');
 
@@ -751,34 +752,36 @@ function imageHash(buffer) {
   return crypto.createHash('md5').update(buffer).digest('hex').slice(0, 12);
 }
 
-function saveClipboardImageBuffer(hash, buf, nativeImg) {
+function saveClipboardImageBuffer(hash, buf, imageInfo) {
   const fname = `${hash}.png`;
   const fpath = path.join(IMG_DIR, fname);
   if (!fs.existsSync(fpath)) atomicWriteFile(fpath, buf);
-  const size = nativeImg.getSize();
+  const size = imageInfo && typeof imageInfo.getSize === 'function'
+    ? imageInfo.getSize()
+    : { width: imageInfo && imageInfo.width || 0, height: imageInfo && imageInfo.height || 0 };
   return { fname, width: size.width, height: size.height };
 }
 
 // --- Clipboard polling ---
 let lastText = '';
 let lastImgHash = '';
-let lastImageFormatsKey = '';
+let lastImageProbeToken = '';
 let lastImageProbeAt = 0;
 let lastSlowPollLogAt = 0;
 let pollGate = true;
 const IMAGE_CLIPBOARD_PROBE_MS = 3000;
 const SLOW_CLIPBOARD_POLL_MS = 250;
 
-function clipboardFormatsKey() {
+function clipboardFormats() {
   try {
-    return clipboard.availableFormats().sort().join('|');
+    return clipboard.availableFormats();
   } catch {
-    return '';
+    return [];
   }
 }
 
 function formatsContainImage(formatsKey) {
-  return /image|png|tiff|bitmap/i.test(formatsKey || '');
+  return clipboardCapture.formatsSuggestImage(formatsKey);
 }
 
 function addToHistory(entry, matchFn) {
@@ -812,23 +815,25 @@ function pollClipboard() {
   const startedAt = Date.now();
   let formatsKey = '';
   try {
-    formatsKey = clipboardFormatsKey();
+    const formats = clipboardFormats();
+    formatsKey = clipboardCapture.formatsKey(formats);
     if (formatsContainImage(formatsKey)) {
       const now = Date.now();
-      if (formatsKey === lastImageFormatsKey && now - lastImageProbeAt < IMAGE_CLIPBOARD_PROBE_MS) {
+      const probeToken = clipboardCapture.clipboardChangeToken(formats);
+      if (probeToken === lastImageProbeToken && now - lastImageProbeAt < IMAGE_CLIPBOARD_PROBE_MS) {
         return;
       }
-      lastImageFormatsKey = formatsKey;
+      lastImageProbeToken = probeToken;
       lastImageProbeAt = now;
 
-      const img = clipboard.readImage();
-      if (img.isEmpty()) return;
-      const buf = img.toPNG();
+      const captured = clipboardCapture.readClipboardImage({ clipboard, nativeImage, formats });
+      if (!captured) return;
+      const buf = captured.buffer;
       const h = imageHash(buf);
       if (h !== lastImgHash) {
         lastImgHash = h;
         lastText = '';
-        const { fname, width, height } = saveClipboardImageBuffer(h, buf, img);
+        const { fname, width, height } = saveClipboardImageBuffer(h, buf, captured);
         addToHistory(
           { type: 'image', image: fname, ts: Date.now() / 1000, width, height },
           it => it.type === 'image' && it.image === fname
@@ -837,7 +842,7 @@ function pollClipboard() {
       return;
     }
 
-    lastImageFormatsKey = '';
+    lastImageProbeToken = '';
     const text = clipboard.readText();
     if (text && text !== lastText) {
       lastText = text;
