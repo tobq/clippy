@@ -52,8 +52,6 @@
   .filter-tag.active { background:var(--accent); color:var(--active-fg); border-color:var(--accent); }
   .filter-tag.icon-filter:hover { background:var(--hover); border-color:transparent; color:var(--text); }
   .filter-tag.icon-filter.active { background:transparent; border-color:transparent; color:var(--accent); }
-  .filter-tag.builtin { border-style:dashed; }
-  .filter-tag.builtin.active { border-style:solid; }
   .filter-tag.clear-filter { width:22px; height:22px; padding:0; border:0; border-radius:50%; color:var(--text-dim); background:transparent; }
   .filter-tag.clear-filter:hover { color:var(--text); background:var(--hover); }
   .filter-tag .gtag-x { display:none; margin-left:1px; margin-right:-3px; color:var(--text-dim); font-size:10px; vertical-align:middle;
@@ -366,13 +364,14 @@ function numpadMap() {
 // --- Group filter tags ---
 function renderGroupFilters() {
   const el = document.getElementById('groupFilters');
-  const pinnedCount = items.filter(it => isPinned(it)).length;
-  const numpadCount = items.filter(it => numpadOf(it) != null).length;
-  const imageCount = items.filter(it => it.type === 'image').length;
   let html = '';
-  if (pinnedCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__pinned__') ? ' active' : ''}" data-filter="__pinned__" title="${pinnedCount} pinned item${pinnedCount !== 1 ? 's' : ''}" aria-label="Pinned"><span class="mi">star</span></span>`;
-  if (numpadCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__numbered__') ? ' active' : ''}" data-filter="__numbered__" title="${numpadCount} macro${numpadCount !== 1 ? 's' : ''} set for numpad" aria-label="Numpad">#</span>`;
-  if (imageCount) html += `<span class="filter-tag builtin icon-filter${activeFilters.has('__images__') ? ' active' : ''}" data-filter="__images__" title="${imageCount} image${imageCount !== 1 ? 's' : ''}" aria-label="Images"><span class="mi">image</span></span>`;
+  for (const filter of Core.builtinFilters(items, activeFilters)) {
+    const title = filter.id === '__numbered__'
+      ? `${filter.count} macro${filter.count !== 1 ? 's' : ''} set for numpad`
+      : `${filter.count} ${filter.label.toLowerCase().replace(/s$/, '')}${filter.count !== 1 ? 's' : ''}`;
+    const content = filter.icon === 'numpad' ? '#' : `<span class="mi">${filter.icon}</span>`;
+    html += `<span class="filter-tag builtin icon-filter${filter.active ? ' active' : ''}" data-filter="${filter.id}" title="${title}" aria-label="${filter.ariaLabel}">${content}</span>`;
+  }
   html += groups.map(g => {
     const count = items.filter(it => isInGroup(it, g)).length;
     return `<span class="filter-tag${activeFilters.has(g) ? ' active' : ''}" data-group="${esc(g)}" title="${count} item${count !== 1 ? 's' : ''} in ${esc(g)}">${esc(g)}<span class="gtag-x mi" data-action="delete-group" data-group="${esc(g)}">close</span></span>`;

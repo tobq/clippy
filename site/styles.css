@@ -460,7 +460,7 @@ code {
   padding: 0 8px;
   color: var(--dim);
   background: transparent;
-  border: 1px dashed #343840;
+  border: 1px solid #343840;
   border-radius: 10px;
   cursor: pointer;
   font-size: 10px;
@@ -480,6 +480,12 @@ code {
   font-weight: 800;
   border-color: transparent;
   border-radius: 4px;
+}
+.chip.icon-chip svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  display: block;
 }
 .chip.icon-chip.active {
   color: var(--accent);
@@ -861,7 +867,6 @@ code {
 }
 .clip-meta .numpad-chip {
   color: var(--green);
-  border-style: dashed;
 }
 .empty {
   padding: 54px 20px;

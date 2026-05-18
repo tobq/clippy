@@ -79,6 +79,25 @@
     });
     return map;
   }
+  const BUILTIN_FILTERS = [
+    { id: '__pinned__', icon: 'star', label: 'Pinned', ariaLabel: 'Pinned' },
+    { id: '__numbered__', icon: 'numpad', label: 'Numpad', ariaLabel: 'Numpad' },
+    { id: '__images__', icon: 'image', label: 'Images', ariaLabel: 'Images' },
+  ];
+  function builtinFilterCount(items, id) {
+    if (id === '__pinned__') return (items || []).filter(isPinned).length;
+    if (id === '__numbered__') return (items || []).filter((item) => numpadOf(item) != null).length;
+    if (id === '__images__') return (items || []).filter((item) => item && item.type === 'image').length;
+    return 0;
+  }
+  function builtinFilters(items, activeFilters) {
+    return BUILTIN_FILTERS
+      .map((filter) => {
+        const count = builtinFilterCount(items, filter.id);
+        return { ...filter, count, active: !!(activeFilters && activeFilters.has(filter.id)) };
+      })
+      .filter((filter) => filter.count > 0);
+  }
   function itemSearchText(item) {
     if (!item) return '';
     return [
@@ -206,6 +225,9 @@
     nextAgoDelayMs,
     updateRelativeTimes,
     numpadMap,
+    BUILTIN_FILTERS,
+    builtinFilterCount,
+    builtinFilters,
     itemSearchText,
     matchesQuery,
     matchesFilter,
