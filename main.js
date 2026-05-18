@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, clipboard, nativeImage,
-        ipcMain, protocol, screen, shell, nativeTheme } = require('electron');
+        ipcMain, protocol, screen, shell, nativeTheme, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -540,8 +540,8 @@ function syncAccountsWithLegacy(accounts) {
   if (legacyAvailable && !result.some(acc => normalizeSyncPath(acc.path) === legacyPath)) {
     result.push({
       provider: 'custom',
-      label: 'Custom sync folder',
-      email: 'Custom sync folder',
+      label: path.basename(legacyPath) || legacyPath,
+      email: '',
       path: legacyPath,
     });
   }
@@ -1444,6 +1444,19 @@ function setupIPC() {
     for (const acc of accounts) disabled.add(normalizeSyncPath(acc.path));
     settings.sync_disabled_paths = [...disabled];
     saveSettingsFile();
+  });
+
+  ipcMain.handle('choose-sync-folder', async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose BoardClip sync folder',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: settings.sync_path || os.homedir(),
+    });
+    if (result.canceled || !result.filePaths || !result.filePaths[0]) return { canceled: true };
+    const syncPath = result.filePaths[0];
+    settings.sync_path = syncPath;
+    await setSyncPathEnabled(syncPath, true);
+    return { canceled: false, path: syncPath };
   });
 
   ipcMain.handle('set-sync-path-enabled', async (_, syncPath, enabled) => {
