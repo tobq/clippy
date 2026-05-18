@@ -598,8 +598,10 @@ document.addEventListener('click', async (e) => {
 });
 
 // --- Prompt dialog (Electron disables window.prompt) ---
+let activePromptCancel = null;
 function promptDialog(title) {
   return new Promise((resolve) => {
+    if (activePromptCancel) activePromptCancel();
     const overlay = document.getElementById('promptOverlay');
     const input = document.getElementById('promptInput');
     const yes = document.getElementById('promptYes');
@@ -614,6 +616,7 @@ function promptDialog(title) {
       yes.removeEventListener('click', onYes);
       no.removeEventListener('click', onNo);
       document.removeEventListener('keydown', onKey, true);
+      if (activePromptCancel === onNo) activePromptCancel = null;
     };
     const onYes = () => { const v = input.value.trim(); cleanup(); resolve(v || null); };
     const onNo = () => { cleanup(); resolve(null); };
@@ -624,11 +627,21 @@ function promptDialog(title) {
     yes.addEventListener('click', onYes);
     no.addEventListener('click', onNo);
     document.addEventListener('keydown', onKey, true); // capture phase: beats global nav handler
+    activePromptCancel = onNo;
   });
 }
 
 // --- Numpad assign with confirm ---
 let pendingAssign = null;
+window.resetPopupState = function() {
+  pendingAssign = null;
+  if (activePromptCancel) activePromptCancel();
+  document.getElementById('confirmOverlay')?.classList.remove('show');
+  document.getElementById('promptOverlay')?.classList.remove('show');
+  document.getElementById('settingsView')?.classList.remove('show');
+  document.getElementById('mainView')?.classList.remove('hidden');
+};
+
 function tryAssignNumpad(slot, id) {
   const nmap = numpadMap();
   if (slot in nmap && nmap[slot] !== id) {

@@ -934,9 +934,7 @@ function createPopup() {
     stopClickAwayWatcher();
     // Clear any open modals/state in renderer
     win.webContents.executeJavaScript(`
-      document.getElementById('confirmOverlay')?.classList.remove('show');
-      document.getElementById('settingsView')?.classList.remove('show');
-      document.getElementById('mainView')?.classList.remove('hidden');
+      window.resetPopupState?.();
     `).catch(() => {});
   });
 
