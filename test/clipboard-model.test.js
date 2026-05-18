@@ -167,6 +167,24 @@ function text(text, extra = {}) {
 }
 
 {
+  const appHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const siteHtml = fs.readFileSync(path.join(__dirname, '..', 'site', 'index.html'), 'utf8');
+  const siteCss = fs.readFileSync(path.join(__dirname, '..', 'site', 'styles.css'), 'utf8');
+  const sharedCss = fs.readFileSync(path.join(__dirname, '..', 'site', 'shared', 'clipboard-popup.css'), 'utf8');
+  assert(appHtml.includes('site/shared/clipboard-popup.css'));
+  assert(siteHtml.includes('/shared/clipboard-popup.css'));
+  assert(appHtml.includes('Core.renderFilterBar'));
+  assert(siteHtml.includes('Core.renderFilterBar'));
+  assert(appHtml.includes('Core.renderClipItem'));
+  assert(siteHtml.includes('Core.renderClipItem'));
+  for (const selector of ['filter-tag', 'item', 'preview', 'meta', 'star', 'empty']) {
+    assert(sharedCss.includes(`.${selector}`), `shared popup css owns .${selector}`);
+    assert(!new RegExp(`^\\s*\\.${selector}\\b`, 'm').test(appHtml), `app must not redefine .${selector}`);
+    assert(!new RegExp(`^\\s*\\.${selector}\\b`, 'm').test(siteCss), `site css must not redefine .${selector}`);
+  }
+}
+
+{
   assert.strictEqual(autoUpdate.updateScriptPath('C:\\App', 'win32'), 'C:\\App\\update.bat');
   assert.strictEqual(autoUpdate.updateScriptPath('/app', 'linux'), '/app/update.sh');
   assert.strictEqual(autoUpdate.canAutoUpdate(__dirname, { fullCommit: 'abc', dirty: true }), false);
@@ -183,6 +201,7 @@ function text(text, extra = {}) {
   }
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['index.html']), 'reload');
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['site/shared/clipboard-ui-core.js']), 'reload');
+  assert.strictEqual(autoUpdate.updateModeForChangedFiles(['site/shared/clipboard-popup.css']), 'reload');
   assert.strictEqual(autoUpdate.updateModeForChangedFiles(['main.js']), 'relaunch');
   assert.strictEqual(autoUpdate.updateModeForChangedFiles([]), 'none');
 }
