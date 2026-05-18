@@ -133,6 +133,36 @@ let dataRevision = 0;
 let cloudAccountsCache = [];
 let cloudAccountsCacheAt = 0;
 const CLOUD_ACCOUNTS_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_SHOW_SHORTCUT = 'CommandOrControl+Shift+V';
+
+function defaultShowShortcut() {
+  return process.platform === 'win32' ? 'Super+V' : DEFAULT_SHOW_SHORTCUT;
+}
+
+function effectiveShowShortcut() {
+  return settings.show_shortcut || defaultShowShortcut();
+}
+
+function globalShowShortcut() {
+  return settings.show_shortcut || (process.platform === 'win32' ? '' : DEFAULT_SHOW_SHORTCUT);
+}
+
+function normalizeShowShortcut(shortcut) {
+  const value = String(shortcut || '').trim();
+  if (process.platform === 'win32' && value === defaultShowShortcut()) return '';
+  if (process.platform !== 'win32' && value === DEFAULT_SHOW_SHORTCUT) return '';
+  return value;
+}
+
+function shortcutHasKeyAndModifier(shortcut) {
+  const parts = String(shortcut || '').split('+').map(p => p.trim()).filter(Boolean);
+  const modifiers = new Set([
+    'CommandOrControl', 'CommandOrCtrl', 'CmdOrCtrl',
+    'Command', 'Cmd', 'Control', 'Ctrl', 'Alt', 'Option',
+    'Shift', 'Super', 'Meta',
+  ]);
+  return parts.some(part => modifiers.has(part)) && parts.some(part => !modifiers.has(part));
+}
 
 function normalizeSyncPath(syncPath) {
   return path.normalize(String(syncPath || ''));
@@ -440,6 +470,7 @@ function remoteSettingsPayload() {
   delete remoteSave.numpad_slots;
   delete remoteSave.sync_path;
   delete remoteSave.sync_disabled_paths;
+  delete remoteSave.show_shortcut;
   return remoteSave;
 }
 
@@ -1037,6 +1068,12 @@ function setupIPC() {
       app_dir: SCRIPT_DIR,
       auto_update: canAutoUpdate(SCRIPT_DIR, BUILD_INFO),
     },
+    shortcut_info: {
+      show: effectiveShowShortcut(),
+      custom: !!settings.show_shortcut,
+      default: defaultShowShortcut(),
+      windows_hook: process.platform === 'win32',
+    },
   }));
 
   ipcMain.handle('paste', (_, id) => {
@@ -1131,6 +1168,8 @@ function setupIPC() {
     saveSettingsFile();
     pruneHistory();
   });
+
+  ipcMain.handle('set-show-shortcut', (_, shortcut) => setShowShortcut(shortcut));
 
   ipcMain.handle('group-create', (_, name) => {
     if (!name) return;
@@ -1256,7 +1295,31 @@ function handleNumpad(slot) {
   }
 }
 
+function setShowShortcut(shortcut) {
+  const previous = settings.show_shortcut || '';
+  const next = normalizeShowShortcut(shortcut);
+  if (next && !shortcutHasKeyAndModifier(next)) {
+    return { ok: false, error: 'Use at least one modifier and one key.' };
+  }
+
+  settings.show_shortcut = next;
+  const result = registerShortcuts();
+  if (!result.showShortcutRegistered) {
+    settings.show_shortcut = previous;
+    registerShortcuts();
+    return { ok: false, error: 'Shortcut is already in use or not supported.' };
+  }
+
+  saveSettingsFile();
+  return { ok: true, shortcut: effectiveShowShortcut(), custom: !!settings.show_shortcut };
+}
+
 function registerShortcuts() {
+  globalShortcut.unregisterAll();
+
+  let showShortcutRegistered = true;
+  const showKey = globalShowShortcut();
+
   if (process.platform === 'win32') {
     // Windows Clipboard History owns Win+V and Win+Numpad1-9, so we can't use
     // Electron's globalShortcut (RegisterHotKey) here — it silently fails.
@@ -1270,12 +1333,16 @@ function registerShortcuts() {
     // Seed the shared state with current history so plain numpad keys
     // immediately intercept for already-assigned slots.
     syncHookState();
-    return;
   }
 
-  // macOS / Linux: Electron globalShortcut works
-  const showKey = 'CommandOrControl+Shift+V';
-  globalShortcut.register(showKey, showPopup);
+  if (showKey) {
+    showShortcutRegistered = globalShortcut.register(showKey, showPopup);
+    if (!showShortcutRegistered) console.log(`Warning: Could not register popup shortcut ${showKey}`);
+  }
+
+  if (process.platform === 'win32') {
+    return { showShortcutRegistered, showShortcut: effectiveShowShortcut() };
+  }
 
   for (let n = 1; n <= 9; n++) {
     const key = `Super+num${n}`;
@@ -1283,6 +1350,8 @@ function registerShortcuts() {
     const registered = globalShortcut.register(key, () => handleNumpad(slot));
     if (!registered) console.log(`Warning: Could not register ${key}`);
   }
+
+  return { showShortcutRegistered, showShortcut: effectiveShowShortcut() };
 }
 
 nativeTheme.on('updated', notifyColorSchemeChanged);
@@ -1332,8 +1401,7 @@ app.whenReady().then(() => {
   setInterval(pollClipboard, 400);
   setInterval(() => syncMerge(), 30000);
 
-  const hotkey = process.platform === 'darwin' ? 'Cmd+Shift+V' : 'Win+V';
-  console.log(`BoardClip running. ${hotkey} to open popup.`);
+  console.log(`BoardClip running. ${effectiveShowShortcut()} to open popup.`);
 });
 
 app.on('will-quit', () => {

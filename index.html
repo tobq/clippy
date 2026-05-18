@@ -150,6 +150,17 @@
   .switch-row input:checked + .switch::after { left:16px; background:var(--accent); }
   .switch-row:hover .switch { border-color:var(--accent); }
   .switch-row:focus-within .switch { border-color:var(--accent); box-shadow:0 0 0 2px rgba(167,139,250,.18); }
+  .shortcut-row { align-items:flex-start; gap:10px; }
+  .shortcut-row > label { padding-top:6px; flex-shrink:0; }
+  .shortcut-control { display:flex; align-items:center; justify-content:flex-end; gap:6px; min-width:0; }
+  .shortcut-btn { min-width:130px; max-width:190px; background:var(--input); border:1px solid var(--line); border-radius:4px; color:var(--text);
+                  padding:5px 8px; font-size:11px; font-family:'Cascadia Code','Consolas',monospace; white-space:nowrap; overflow:hidden;
+                  text-overflow:ellipsis; cursor:pointer; text-align:left; }
+  .shortcut-btn:hover { border-color:var(--accent); }
+  .shortcut-btn.recording { border-color:var(--accent); color:var(--accent); background:var(--accent-bg); }
+  .shortcut-reset .mi { font-size:14px; }
+  .shortcut-status { min-height:14px; font-size:10px; color:var(--text-dim); margin-top:-4px; }
+  .shortcut-status.error { color:var(--red); }
   .settings-section { margin-top:16px; }
   .settings-section h3 { font-size:12px; color:var(--text-dim); margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px; }
   .np-slot { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line-soft); }
@@ -219,6 +230,14 @@
       <input id="autoLaunch" type="checkbox">
       <span class="switch" aria-hidden="true"></span>
     </label>
+    <div class="setting-row shortcut-row">
+      <label>Popup shortcut</label>
+      <div class="shortcut-control">
+        <button class="shortcut-btn" id="shortcutRecord" type="button"></button>
+        <button class="icon-btn shortcut-reset" id="shortcutReset" title="Reset shortcut" type="button"><span class="mi">restart_alt</span></button>
+      </div>
+    </div>
+    <div class="shortcut-status" id="shortcutStatus"></div>
     <div class="setting-row"><label>Max age (days)</label><input id="maxAge" type="number" min="1"></div>
     <div class="setting-row"><label>Max size (GB)</label><input id="maxSize" type="number" min="0.1" step="0.1"></div>
     <div class="settings-usage" id="usage"></div>
@@ -728,6 +747,145 @@ document.getElementById('settingsCloseBtn').addEventListener('click', () => wind
 document.getElementById('closeBtn').addEventListener('click', () => window.api.hidePopup());
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('settingsBack').addEventListener('click', closeSettings);
+
+let shortcutRecording = false;
+
+function shortcutLabel(accelerator) {
+  return String(accelerator || '')
+    .replace(/CommandOrControl/g, window.api.platform === 'darwin' ? 'Cmd/Ctrl' : 'Ctrl')
+    .replace(/Command/g, 'Cmd')
+    .replace(/Control/g, 'Ctrl')
+    .replace(/Super/g, window.api.platform === 'darwin' ? 'Cmd' : 'Win')
+    .replace(/\+/g, ' + ');
+}
+
+function setShortcutStatus(message, isError = false) {
+  const status = document.getElementById('shortcutStatus');
+  status.textContent = message || '';
+  status.className = 'shortcut-status' + (isError ? ' error' : '');
+}
+
+function stopShortcutRecording() {
+  shortcutRecording = false;
+  const button = document.getElementById('shortcutRecord');
+  if (button) button.classList.remove('recording');
+}
+
+function renderShortcutSettings(settings, { clearStatus = true } = {}) {
+  const info = settings.shortcut_info || { show: 'CommandOrControl+Shift+V', custom: false };
+  const record = document.getElementById('shortcutRecord');
+  const reset = document.getElementById('shortcutReset');
+  record.textContent = shortcutLabel(info.show);
+  record.title = info.show;
+  record.classList.remove('recording');
+  reset.style.visibility = info.custom ? 'visible' : 'hidden';
+  if (clearStatus) setShortcutStatus('');
+}
+
+function shortcutKeyFromEvent(e) {
+  const modifierKeys = new Set(['Alt', 'AltGraph', 'Control', 'Meta', 'Shift']);
+  if (modifierKeys.has(e.key)) return '';
+  if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3);
+  if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);
+  if (/^Numpad[0-9]$/.test(e.code)) return `num${e.code.slice(6)}`;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(e.key)) return e.key.toUpperCase();
+  const byCode = {
+    Minus: 'Minus',
+    Equal: e.shiftKey ? 'Plus' : '=',
+    BracketLeft: '[',
+    BracketRight: ']',
+    Backslash: 'Backslash',
+    Semicolon: ';',
+    Quote: "'",
+    Backquote: '`',
+    Comma: ',',
+    Period: '.',
+    Slash: '/',
+    NumpadAdd: 'Plus',
+    NumpadSubtract: 'Minus',
+    NumpadMultiply: '*',
+    NumpadDivide: '/',
+    NumpadDecimal: '.',
+  };
+  if (byCode[e.code]) return byCode[e.code];
+  const byKey = {
+    ' ': 'Space',
+    Spacebar: 'Space',
+    Tab: 'Tab',
+    Enter: 'Enter',
+    Return: 'Enter',
+    Backspace: 'Backspace',
+    Delete: 'Delete',
+    Insert: 'Insert',
+    Home: 'Home',
+    End: 'End',
+    PageUp: 'PageUp',
+    PageDown: 'PageDown',
+    ArrowUp: 'Up',
+    ArrowDown: 'Down',
+    ArrowLeft: 'Left',
+    ArrowRight: 'Right',
+    CapsLock: 'Capslock',
+    NumLock: 'Numlock',
+    ScrollLock: 'Scrolllock',
+    '+': 'Plus',
+    '-': 'Minus',
+  };
+  return byKey[e.key] || '';
+}
+
+function shortcutFromEvent(e) {
+  const mods = [];
+  if (e.metaKey) mods.push(window.api.platform === 'darwin' ? 'Command' : 'Super');
+  if (e.ctrlKey) mods.push('Control');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  const key = shortcutKeyFromEvent(e);
+  if (!key || !mods.length) return '';
+  return [...mods, key].join('+');
+}
+
+async function applyShortcut(shortcut) {
+  stopShortcutRecording();
+  const result = await window.api.setShowShortcut(shortcut);
+  if (!result || !result.ok) {
+    const settings = await window.api.getSettings().catch(() => null);
+    if (settings) renderShortcutSettings(settings, { clearStatus: false });
+    setShortcutStatus(result && result.error ? result.error : 'Shortcut was not saved.', true);
+    return;
+  }
+  const settings = await window.api.getSettings();
+  renderShortcutSettings(settings);
+}
+
+document.getElementById('shortcutRecord').addEventListener('click', () => {
+  shortcutRecording = true;
+  const record = document.getElementById('shortcutRecord');
+  record.classList.add('recording');
+  record.textContent = 'Press keys';
+  setShortcutStatus('');
+});
+
+document.getElementById('shortcutReset').addEventListener('click', () => applyShortcut(''));
+
+document.addEventListener('keydown', async (e) => {
+  if (!shortcutRecording) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    stopShortcutRecording();
+    const settings = await window.api.getSettings().catch(() => null);
+    if (settings) renderShortcutSettings(settings);
+    return;
+  }
+  const shortcut = shortcutFromEvent(e);
+  if (!shortcut) {
+    setShortcutStatus(shortcutKeyFromEvent(e) ? 'Add a modifier.' : 'Press a non-modifier key.', true);
+    return;
+  }
+  await applyShortcut(shortcut);
+}, true);
+
 document.getElementById('addGroupBtn').addEventListener('click', async () => {
   const name = await promptDialog('New group name');
   if (name) {
@@ -756,6 +914,7 @@ async function openSettings() {
   const autoLaunchEl = document.getElementById('autoLaunch');
   autoLaunchEl.checked = await window.api.getAutoLaunch();
   autoLaunchEl.onchange = (e) => window.api.setAutoLaunch(e.target.checked);
+  renderShortcutSettings(s);
   const maxAgeEl = document.getElementById('maxAge');
   const maxSizeEl = document.getElementById('maxSize');
   maxAgeEl.value = s.max_age_days;
