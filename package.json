@@ -3,12 +3,69 @@
   "productName": "BoardClip",
   "version": "2.0.0",
   "description": "Cross-platform clipboard history tray app with numpad quick-paste and native cloud sync",
+  "author": "BoardClip contributors",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node test/clipboard-model.test.js"
+    "test": "node test/clipboard-model.test.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis portable",
+    "dist:mac": "electron-builder --mac dmg zip",
+    "dist:linux": "electron-builder --linux AppImage deb"
+  },
+  "build": {
+    "appId": "app.boardclip.desktop",
+    "productName": "BoardClip",
+    "asar": true,
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "package.json",
+      "lib/**",
+      "site/shared/**",
+      "icon.png",
+      "icon@2x.png"
+    ],
+    "extraResources": [
+      {
+        "from": "icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "forceCodeSigning": false,
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
   },
   "devDependencies": {
+    "electron-builder": "^26.0.12",
     "electron": "^34.0.0"
   },
   "dependencies": {

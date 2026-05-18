@@ -4,6 +4,12 @@ Fast cross-platform clipboard history for desktop. BoardClip runs as a tray app,
 
 ## Install
 
+Everyday desktop builds are published on GitHub Releases:
+
+[Download BoardClip](https://github.com/tobq/boardclip/releases/latest)
+
+Terminal install keeps a source checkout on your machine and reuses the same local lifecycle scripts for future updates.
+
 macOS / Linux:
 
 ```sh
@@ -82,6 +88,14 @@ npm install
 npm test
 npm start
 ```
+
+Build desktop binaries locally:
+
+```sh
+npm run dist
+```
+
+Platform-specific package scripts are available as `npm run dist:win`, `npm run dist:mac`, and `npm run dist:linux`. Tagged releases matching `v*` are built by GitHub Actions and attached to the GitHub release.
 
 Useful local scripts:
 
