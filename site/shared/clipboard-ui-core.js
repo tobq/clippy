@@ -271,6 +271,61 @@
       </div>
     </div>`;
   }
+  function renderPopupShell(options) {
+    const opts = options || {};
+    const ids = {
+      mainView: 'mainView',
+      count: 'count',
+      settingsBtn: 'settingsBtn',
+      closeBtn: 'closeBtn',
+      search: 'search',
+      searchClear: 'searchClear',
+      regexBtn: 'regexBtn',
+      groupFilters: 'groupFilters',
+      list: 'list',
+      settingsView: 'settingsView',
+      settingsBack: 'settingsBack',
+      settingsCloseBtn: 'settingsCloseBtn',
+      ...(opts.ids || {}),
+    };
+    const esc = escapeHtml;
+    const settingsBodyHtml = opts.settingsBodyHtml || '';
+    const afterListHtml = opts.afterListHtml || '';
+    const settingsNoteHtml = opts.settingsNote
+      ? `<span class="settings-note">${esc(opts.settingsNote)}</span>`
+      : '';
+    const closeStyle = opts.showCloseButtons ? '' : ' style="display:none"';
+    return `<div class="main-view" id="${esc(ids.mainView)}">
+      <div class="sticky">
+        <header>
+          <span class="count" id="${esc(ids.count)}"></span>
+          <button class="icon-btn accent" id="${esc(ids.settingsBtn)}" type="button" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="${esc(ids.settingsView)}"><span class="mi filled">settings</span></button>
+          <button class="icon-btn close-btn" id="${esc(ids.closeBtn)}" type="button" title="Close (Esc)"${closeStyle}>&times;</button>
+        </header>
+        <div class="search-row">
+          <input class="search" id="${esc(ids.search)}" type="text" placeholder="Search..." autocomplete="off" spellcheck="false">
+          <div class="search-btns">
+            <button class="icon-btn search-clear" id="${esc(ids.searchClear)}" type="button" title="Clear search" aria-label="Clear search"><span class="mi">close</span></button>
+            <button class="icon-btn rx-btn" id="${esc(ids.regexBtn)}" type="button" title="Regex search" aria-label="Regex search">.*</button>
+          </div>
+        </div>
+        <div class="group-filters" id="${esc(ids.groupFilters)}" aria-label="Filters"></div>
+      </div>
+      <div class="list" id="${esc(ids.list)}" aria-live="polite"></div>
+      ${afterListHtml}
+    </div>
+    <div class="settings-view" id="${esc(ids.settingsView)}">
+      <div class="settings-hdr">
+        <button class="icon-btn" id="${esc(ids.settingsBack)}" type="button" title="Back" aria-label="Back"><span class="mi">arrow_back</span></button>
+        <h2>Settings</h2>
+        ${settingsNoteHtml}
+        <button class="icon-btn close-btn" id="${esc(ids.settingsCloseBtn)}" type="button" title="Close (Esc)"${closeStyle}>&times;</button>
+      </div>
+      <div class="settings-body">
+        ${settingsBodyHtml}
+      </div>
+    </div>`;
+  }
   function sortItems(items) {
     return [...(items || [])].sort((a, b) => (b.ts || 0) - (a.ts || 0));
   }
@@ -365,6 +420,7 @@
     builtinFilterIconHtml,
     renderFilterBar,
     renderClipItem,
+    renderPopupShell,
     sortItems,
     touchItem,
     togglePin,

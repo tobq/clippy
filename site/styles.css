@@ -353,46 +353,6 @@ code {
   box-shadow: 0 22px 60px var(--demo-shadow);
   overflow: hidden;
 }
-.demo-window.settings-open .demo-main { display: none; }
-.demo-window.settings-open #demo-settings { display: flex; }
-.window-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px 4px;
-  color: var(--dim);
-  font-size: 11px;
-}
-.icon-settings {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  color: var(--dim);
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.icon-settings:hover,
-.icon-settings.active {
-  color: var(--accent);
-  background: rgba(255,255,255,.06);
-}
-.icon-settings svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
-}
-.demo-settings-note {
-  color: var(--dim);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
 .setting-value {
   color: var(--ink);
   background: #11151a;
@@ -401,17 +361,6 @@ code {
   padding: 2px 6px;
   font: 11px/1.3 "Cascadia Code", Consolas, monospace;
 }
-.demo-back {
-  width: 24px;
-  height: 24px;
-  color: var(--dim);
-  background: transparent;
-  border: 0;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 15px;
-}
-.demo-back:hover { color: var(--accent); background: rgba(255,255,255,.06); }
 .demo-foot {
   display: flex;
   align-items: center;

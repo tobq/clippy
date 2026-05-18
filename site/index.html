@@ -81,61 +81,7 @@
       </div>
 
       <div class="demo" aria-label="Interactive BoardClip demo">
-        <div class="demo-window">
-          <div class="window-head">
-            <span id="clip-count">100 items</span>
-            <button class="icon-settings" id="demo-settings-button" type="button" aria-label="Settings" aria-expanded="false" aria-controls="demo-settings">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.28 7.28 0 0 0-1.7-.98L14.5 2.42A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.5.42L9.12 5.07c-.61.24-1.18.56-1.7.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65a7.8 7.8 0 0 0 0 1.96l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.31.61.22l2.49-1c.52.4 1.09.73 1.7.98l.38 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.38-2.65c.61-.24 1.18-.56 1.7-.98l2.49 1c.23.08.48 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/>
-              </svg>
-            </button>
-          </div>
-          <div class="search-row demo-main">
-            <input class="search" id="demo-search" type="text" autocomplete="off" spellcheck="false" placeholder="Search...">
-            <div class="search-btns">
-              <button class="icon-btn search-clear" id="demo-clear-search" type="button" title="Clear search" aria-label="Clear search"><span class="mi">close</span></button>
-              <button class="icon-btn rx-btn" id="demo-regex" type="button" title="Regex search" aria-label="Regex search">.*</button>
-            </div>
-          </div>
-          <div class="settings-view" id="demo-settings" hidden>
-            <div class="settings-hdr">
-              <button class="icon-btn demo-back" id="demo-settings-back" type="button" aria-label="Back">&larr;</button>
-              <h2>Settings</h2>
-              <span class="demo-settings-note">Demo</span>
-            </div>
-            <div class="settings-body">
-              <label class="setting-row switch-row">
-                <span>Launch on startup</span>
-                <input class="demo-toggle-input" type="checkbox" checked>
-                <span class="switch" aria-hidden="true"></span>
-              </label>
-              <div class="setting-row"><label>Search mode</label><span class="setting-value" id="demo-search-mode">plain</span></div>
-              <div class="settings-usage" id="demo-usage">100 items, 0.0 MB</div>
-              <div class="settings-section">
-                <h3>Sync</h3>
-                <div class="sync-list">
-                  <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">Google Drive</span><span class="sync-account-path">Demo cloud folder</span></span></label>
-                  <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">OneDrive</span><span class="sync-account-path">Demo cloud folder</span></span></label>
-                  <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">iCloud</span><span class="sync-account-path">Demo cloud folder</span></span></label>
-                </div>
-              </div>
-              <div class="settings-section">
-                <h3>Numpad Shortcuts</h3>
-                <div id="demo-numpad-slots"></div>
-              </div>
-              <div class="settings-section">
-                <h3>Groups</h3>
-                <div id="demo-group-slots"></div>
-              </div>
-            </div>
-          </div>
-          <div class="group-filters demo-main" id="filter-chips" aria-label="Filters"></div>
-          <div class="list demo-main" id="clip-list" aria-live="polite"></div>
-          <div class="demo-foot demo-main">
-            <span>Try: "invoice", "api", "meeting", "image", "thanks"</span>
-            <button type="button" id="random-query">Shuffle search</button>
-          </div>
-        </div>
+        <div class="demo-window" id="demo-window"></div>
         <div class="demo-guide" id="demo-guide" aria-hidden="true">
           <svg class="demo-guide-cursor" viewBox="0 0 24 32" aria-hidden="true">
             <path d="M3 2.5v24l6.2-6.1 4.2 8.7 4.4-2.1-4.2-8.3h8.8L3 2.5Z"/>
@@ -198,6 +144,59 @@
   <script src="/shared/clipboard-ui-core.js"></script>
   <script>
     const Core = window.BoardClipCore;
+    document.getElementById("demo-window").innerHTML = Core.renderPopupShell({
+      ids: {
+        mainView: "demo-main-view",
+        count: "clip-count",
+        settingsBtn: "demo-settings-button",
+        closeBtn: "demo-close-button",
+        search: "demo-search",
+        searchClear: "demo-clear-search",
+        regexBtn: "demo-regex",
+        groupFilters: "filter-chips",
+        list: "clip-list",
+        settingsView: "demo-settings",
+        settingsBack: "demo-settings-back",
+        settingsCloseBtn: "demo-settings-close",
+      },
+      settingsNote: "Demo",
+      settingsBodyHtml: `
+        <label class="setting-row switch-row">
+          <span>Launch on startup</span>
+          <input class="demo-toggle-input" type="checkbox" checked>
+          <span class="switch" aria-hidden="true"></span>
+        </label>
+        <div class="setting-row"><label>Search mode</label><span class="setting-value" id="demo-search-mode">plain</span></div>
+        <div class="settings-usage" id="demo-usage">100 items, 0.0 MB</div>
+        <div class="settings-section">
+          <h3>Numpad Shortcuts</h3>
+          <div id="demo-numpad-slots"></div>
+        </div>
+        <div class="settings-section">
+          <h3>Sync</h3>
+          <div class="sync-row">
+            <div class="sync-list">
+              <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">Google Drive</span><span class="sync-account-path">Demo cloud folder</span></span></label>
+              <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">OneDrive</span><span class="sync-account-path">Demo cloud folder</span></span></label>
+              <label class="sync-account"><input type="checkbox" checked><span class="sync-account-main"><span class="sync-provider">iCloud</span><span class="sync-account-path">Demo cloud folder</span></span></label>
+            </div>
+            <button class="sync-btn" type="button" title="Sync now"><span class="mi" style="font-size:14px;vertical-align:middle">sync</span></button>
+          </div>
+          <button class="settings-secondary sync-add-folder" type="button"><span class="mi" style="font-size:14px;vertical-align:middle">create_new_folder</span> Add sync folder</button>
+          <div class="sync-status active">3/3 providers enabled; syncs on change + every 30s</div>
+        </div>
+        <div class="settings-section">
+          <h3>Groups</h3>
+          <div id="demo-group-slots"></div>
+        </div>
+      `,
+      afterListHtml: `
+        <div class="demo-foot">
+          <span>Try: "invoice", "api", "meeting", "image", "thanks"</span>
+          <button type="button" id="random-query">Shuffle search</button>
+        </div>
+      `,
+    });
     const osLabels = {
       mac: "macOS terminal",
       linux: "Linux terminal",
@@ -311,6 +310,7 @@
     const settingsButton = document.getElementById("demo-settings-button");
     const settingsBack = document.getElementById("demo-settings-back");
     const settingsPanel = document.getElementById("demo-settings");
+    const demoMainView = document.getElementById("demo-main-view");
     const searchMode = document.getElementById("demo-search-mode");
     const demoUsage = document.getElementById("demo-usage");
     const demoNumpadSlots = document.getElementById("demo-numpad-slots");
@@ -566,7 +566,7 @@
 
     function runGuide() {
       if (!pointer || guideStopped || guideRuns >= 5 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      const targets = ["#demo-search", "[data-filter='__images__']", "#demo-settings-button", "#random-query", ".clip.selected"];
+      const targets = ["#demo-search", "[data-filter='__images__']", "#demo-settings-button", "#random-query", ".item.selected"];
       const to = targetPoint(targets[guideRuns % targets.length]);
       const from = {
         x: Math.min(Math.max(pointer.x, 20), window.innerWidth - 180),
@@ -651,22 +651,22 @@
       search.focus();
     });
     settingsButton.addEventListener("click", () => {
-      const open = settingsPanel.hidden;
-      settingsPanel.hidden = !open;
-      demoWindow.classList.toggle("settings-open", open);
+      const open = !settingsPanel.classList.contains("show");
+      settingsPanel.classList.toggle("show", open);
+      demoMainView.classList.toggle("hidden", open);
       settingsButton.classList.toggle("active", open);
       settingsButton.setAttribute("aria-expanded", String(open));
     });
     settingsBack.addEventListener("click", () => {
-      settingsPanel.hidden = true;
-      demoWindow.classList.remove("settings-open");
+      settingsPanel.classList.remove("show");
+      demoMainView.classList.remove("hidden");
       settingsButton.classList.remove("active");
       settingsButton.setAttribute("aria-expanded", "false");
       search.focus();
     });
 
     clipList.addEventListener("click", async (event) => {
-      const clipButton = event.target.closest(".clip");
+      const clipButton = event.target.closest(".item");
       if (!clipButton) return;
       const id = clipButton.dataset.id;
       if (event.target.closest("[data-action='pin']")) {
