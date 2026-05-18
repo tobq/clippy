@@ -304,10 +304,11 @@
                 <span class="clip-text">${escapeHtml(clip.text)}</span>
               </span>
             ` : `<span class="clip-text">${escapeHtml(clip.text)}</span>`}
-            <span class="clip-meta">${Core.ago(clip.ts)} &middot; ${clip.type === "image" ? "image" : `${clip.text.length} chars`} ${Core.numpadOf(clip) ? `<em class="numpad-chip">#${Core.numpadOf(clip)}</em>` : ""} ${Core.groupsOf(clip).map((label) => `<em>${escapeHtml(label)}</em>`).join("")}</span>
+            <span class="clip-meta"><span data-relative-ts="${clip.ts || 0}">${Core.ago(clip.ts)}</span> &middot; ${clip.type === "image" ? "image" : `${clip.text.length} chars`} ${Core.numpadOf(clip) ? `<em class="numpad-chip">#${Core.numpadOf(clip)}</em>` : ""} ${Core.groupsOf(clip).map((label) => `<em>${escapeHtml(label)}</em>`).join("")}</span>
           </span>
         </button>
       `).join("") || `<div class="empty">No clips found. Try a different search.</div>`;
+      scheduleRelativeTimeRefresh();
     }
 
     function renderDemoSettings() {
@@ -433,6 +434,13 @@
       const before = clips.length;
       clips = Core.addClipboardText(clips, text);
       if (clips.length !== before || clips[0]?.text === text) renderClips();
+    }
+
+    let relativeTimeTimer = 0;
+    function scheduleRelativeTimeRefresh() {
+      window.clearTimeout(relativeTimeTimer);
+      const delay = Core.updateRelativeTimes(clipList);
+      if (delay) relativeTimeTimer = window.setTimeout(scheduleRelativeTimeRefresh, delay);
     }
 
     function updateClearControls() {

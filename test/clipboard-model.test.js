@@ -62,6 +62,10 @@ function text(text, extra = {}) {
   assert.strictEqual(ui.addClipboardText(base, 'new clip')[0].text, 'new clip');
   assert.strictEqual(ui.touchItem(base, 'a', 30)[0].id, 'a');
   assert.strictEqual(ui.numpadMap(ui.assignNumpad(base, 'a', 2, 40))[2], 'a');
+  assert.strictEqual(ui.ago(100, 102), 'now');
+  assert.strictEqual(ui.ago(100, 165), '1m');
+  assert.strictEqual(ui.nextAgoDelayMs(100, 130), 1000);
+  assert.strictEqual(ui.nextAgoDelayMs(100, 165), 55050);
 }
 
 {

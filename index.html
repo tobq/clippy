@@ -291,11 +291,7 @@ if (window.api.getColorScheme) window.api.getColorScheme().then(applyColorScheme
 if (window.api.onColorSchemeChanged) window.api.onColorSchemeChanged(applyColorScheme);
 
 // --- Helpers ---
-function ago(ts) {
-  const s = Math.floor(Date.now()/1000 - ts);
-  if (s < 3) return 'now'; if (s < 60) return s+'s'; if (s < 3600) return Math.floor(s/60)+'m';
-  if (s < 86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'d';
-}
+function ago(ts) { return Core.ago(ts); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function highlight(text, q) {
   if (!q) return esc(text);
@@ -376,6 +372,7 @@ function rerenderList() {
   renderGroupFilters();
   applyFilter();
   updateCount();
+  scheduleRelativeTimeRefresh();
 }
 
 function loadBatch() {
@@ -389,6 +386,16 @@ function loadBatch() {
   }
   listEl.appendChild(frag);
   rendered = end;
+  scheduleRelativeTimeRefresh();
+}
+
+let relativeTimeTimer = null;
+function scheduleRelativeTimeRefresh() {
+  if (relativeTimeTimer) clearTimeout(relativeTimeTimer);
+  const delay = Core.updateRelativeTimes(listEl);
+  if (delay) {
+    relativeTimeTimer = setTimeout(scheduleRelativeTimeRefresh, delay);
+  }
 }
 
 function buildItem(it, ri, nmap) {
@@ -404,13 +411,13 @@ function buildItem(it, ri, nmap) {
   let metaHtml;
   if (isImage) {
     previewHtml = `<img src="clip-img:///${esc(it.image)}" alt="image">`;
-    metaHtml = `<span>${ago(it.ts)}</span><span>${it.width||'?'}x${it.height||'?'}</span>`;
+    metaHtml = `<span data-relative-ts="${it.ts || 0}">${ago(it.ts)}</span><span>${it.width||'?'}x${it.height||'?'}</span>`;
   } else {
     const text = it.text || '';
     const exp = expanded.has(id);
     const display = exp ? text : text.replace(/\r?\n/g, ' ');
     previewHtml = highlight(display, query);
-    metaHtml = `<span>${ago(it.ts)}</span><span>${text.length.toLocaleString()} chars</span>`;
+    metaHtml = `<span data-relative-ts="${it.ts || 0}">${ago(it.ts)}</span><span>${text.length.toLocaleString()} chars</span>`;
   }
   if (np) metaHtml += `<span class="numpad-tag">#${np}</span>`;
   if (pinned) metaHtml += `<span style="color:var(--pin)">pinned</span>`;

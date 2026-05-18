@@ -49,6 +49,28 @@
     if (s < 86400) return `${Math.floor(s / 3600)}h`;
     return `${Math.floor(s / 86400)}d`;
   }
+  function nextAgoDelayMs(ts, now) {
+    const current = now || Date.now() / 1000;
+    const age = Math.max(0, Math.floor(current - (ts || 0)));
+    if (age < 60) return 1000;
+    if (age < 3600) return (60 - age % 60) * 1000 + 50;
+    if (age < 86400) return (3600 - age % 3600) * 1000 + 50;
+    return 3600000;
+  }
+  function updateRelativeTimes(root, selector) {
+    const scope = root && root.querySelectorAll ? root : document;
+    const nodes = Array.from(scope.querySelectorAll(selector || '[data-relative-ts]'));
+    let nextDelay = 3600000;
+    const now = Date.now() / 1000;
+    for (const node of nodes) {
+      const ts = Number(node.dataset.relativeTs);
+      if (!Number.isFinite(ts)) continue;
+      const label = ago(ts, now);
+      if (node.textContent !== label) node.textContent = label;
+      nextDelay = Math.min(nextDelay, nextAgoDelayMs(ts, now));
+    }
+    return nodes.length ? nextDelay : 0;
+  }
   function numpadMap(items) {
     const map = {};
     (items || []).forEach((item) => {
@@ -161,6 +183,8 @@
     itemId,
     createTextItem,
     ago,
+    nextAgoDelayMs,
+    updateRelativeTimes,
     numpadMap,
     matchesQuery,
     matchesFilter,
