@@ -165,6 +165,12 @@ function atomicWriteJson(filePath, value, spacing) {
   atomicWriteFile(filePath, JSON.stringify(value, null, spacing));
 }
 
+async function atomicWriteFileAsync(filePath, data) {
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.promises.writeFile(tmpPath, data);
+  await fs.promises.rename(tmpPath, filePath);
+}
+
 function loadSettings() {
   try {
     return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8')) };
@@ -666,6 +672,38 @@ function syncTextBlobs(remoteTextDir) {
   textBlobStore.syncTextBlobs(TEXT_DIR, remoteTextDir);
 }
 
+async function copyMissingFilesAsync(fromDir, toDir, filter = () => true) {
+  try { await fs.promises.mkdir(toDir, { recursive: true }); } catch { return; }
+  let names = [];
+  try { names = await fs.promises.readdir(fromDir); } catch { return; }
+  for (const name of names) {
+    if (!filter(name)) continue;
+    const source = path.join(fromDir, name);
+    const dest = path.join(toDir, name);
+    try {
+      const stats = await fs.promises.stat(source);
+      if (!stats.isFile()) continue;
+      try {
+        await fs.promises.access(dest, fs.constants.F_OK);
+      } catch {
+        await fs.promises.copyFile(source, dest);
+      }
+    } catch {}
+  }
+}
+
+async function syncMissingFilesAsync(localDir, remoteDir, filter) {
+  await copyMissingFilesAsync(remoteDir, localDir, filter);
+  await copyMissingFilesAsync(localDir, remoteDir, filter);
+}
+
+async function syncRemoteAssets(remoteImgDir, remoteTextDir) {
+  await Promise.all([
+    syncMissingFilesAsync(IMG_DIR, remoteImgDir),
+    syncMissingFilesAsync(TEXT_DIR, remoteTextDir, name => !!textBlobStore.safeTextRef(name)),
+  ]);
+}
+
 let syncDebounceTimer = null;
 let insideSync = false;
 let applyingSyncState = false;
@@ -796,25 +834,30 @@ async function syncDiagnostics() {
   };
 }
 
-function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
+async function readFileUtf8IfExists(filePath) {
+  try { return await fs.promises.readFile(filePath, 'utf-8'); } catch { return null; }
+}
+
+async function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   const startedAt = Date.now();
-  if (!fs.existsSync(syncPath)) fs.mkdirSync(syncPath, { recursive: true });
+  try { await fs.promises.mkdir(syncPath, { recursive: true }); } catch {}
   const remoteDbPath = path.join(syncPath, 'clipboard-history.json');
   const remoteSettingsPath = path.join(syncPath, 'clipboard-settings.json');
   const remoteImgDir = path.join(syncPath, 'clipboard-images');
   const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
-  const nextHistoryJson = JSON.stringify(textBlobStore.prepareHistoryForStorage(canonicalHistory, remoteTextDir));
+  const nextHistoryJson = JSON.stringify(textBlobStore.prepareHistoryForStorage(canonicalHistory, TEXT_DIR));
   const nextSettingsJson = JSON.stringify(canonicalSettings, null, 2);
-  let currentHistoryJson = null;
-  let currentSettingsJson = null;
-  try { currentHistoryJson = fs.readFileSync(remoteDbPath, 'utf-8'); } catch {}
-  try { currentSettingsJson = fs.readFileSync(remoteSettingsPath, 'utf-8'); } catch {}
+  const [currentHistoryJson, currentSettingsJson] = await Promise.all([
+    readFileUtf8IfExists(remoteDbPath),
+    readFileUtf8IfExists(remoteSettingsPath),
+  ]);
   const wroteHistory = currentHistoryJson !== nextHistoryJson;
   const wroteSettings = currentSettingsJson !== nextSettingsJson;
-  if (wroteHistory) atomicWriteFile(remoteDbPath, nextHistoryJson);
-  if (wroteSettings) atomicWriteFile(remoteSettingsPath, nextSettingsJson);
-  syncImages(remoteImgDir);
-  syncTextBlobs(remoteTextDir);
+  await Promise.all([
+    wroteHistory ? atomicWriteFileAsync(remoteDbPath, nextHistoryJson) : Promise.resolve(),
+    wroteSettings ? atomicWriteFileAsync(remoteSettingsPath, nextSettingsJson) : Promise.resolve(),
+    syncRemoteAssets(remoteImgDir, remoteTextDir),
+  ]);
   updateSyncProviderCache(syncPath);
   diagnostics.slow('sync.write_remote.slow', Date.now() - startedAt, {
     path: syncPath,
@@ -935,7 +978,7 @@ async function syncMerge(options = {}) {
     const canonicalSettings = remoteSettingsPayload();
     if (shouldWriteRemotes) {
       for (const syncPath of syncPaths) {
-        try { writeRemoteState(syncPath, history, canonicalSettings); } catch {}
+        try { await writeRemoteState(syncPath, history, canonicalSettings); } catch {}
       }
     }
     if (fullSync) lastFullSyncAt = Date.now();
