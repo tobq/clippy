@@ -654,7 +654,7 @@ async function setSyncPathEnabled(syncPath, enabled) {
     try {
       if (!fs.existsSync(normalized)) fs.mkdirSync(normalized, { recursive: true });
     } catch {}
-    await syncMerge();
+    await syncMerge({ force: true });
   }
 }
 
@@ -668,11 +668,53 @@ function syncTextBlobs(remoteTextDir) {
 
 let syncDebounceTimer = null;
 let insideSync = false;
+let applyingSyncState = false;
+let syncDirtyVersion = 0;
+let syncedDirtyVersion = 0;
+let syncPending = false;
+let syncPendingForce = false;
+let lastFullSyncAt = 0;
+const SYNC_FULL_INTERVAL_MS = 5 * 60 * 1000;
+const syncProviderCache = new Map();
 
 function scheduleSyncMerge() {
-  if (insideSync) return;
+  if (applyingSyncState) return;
+  syncDirtyVersion++;
+  if (insideSync) {
+    syncPending = true;
+    return;
+  }
   if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
   syncDebounceTimer = setTimeout(syncMerge, 500);
+}
+
+function fileSignature(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return { exists: true, size: stats.size, mtimeMs: Math.round(stats.mtimeMs) };
+  } catch {
+    return { exists: false, size: 0, mtimeMs: 0 };
+  }
+}
+
+function syncProviderSignature(syncPath) {
+  return {
+    history: fileSignature(path.join(syncPath, 'clipboard-history.json')),
+    settings: fileSignature(path.join(syncPath, 'clipboard-settings.json')),
+  };
+}
+
+function syncProviderSignatureKey(signature) {
+  return JSON.stringify(signature);
+}
+
+function updateSyncProviderCache(syncPath) {
+  const signature = syncProviderSignature(syncPath);
+  syncProviderCache.set(syncPath, {
+    signature,
+    signatureKey: syncProviderSignatureKey(signature),
+    checkedAt: Date.now(),
+  });
 }
 
 function readRemoteState(syncPath) {
@@ -773,6 +815,7 @@ function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   if (wroteSettings) atomicWriteFile(remoteSettingsPath, nextSettingsJson);
   syncImages(remoteImgDir);
   syncTextBlobs(remoteTextDir);
+  updateSyncProviderCache(syncPath);
   diagnostics.slow('sync.write_remote.slow', Date.now() - startedAt, {
     path: syncPath,
     items: canonicalHistory.length,
@@ -783,26 +826,67 @@ function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   }, 150);
 }
 
-async function syncMerge() {
+async function syncMerge(options = {}) {
   if (insideSync) {
+    if (options && options.force) {
+      syncPending = true;
+      syncPendingForce = true;
+    }
     diagnostics.record('sync.skip_inside_sync', { items: history.length });
     return;
   }
   insideSync = true;
   const startedAt = Date.now();
+  const force = !!(options && options.force);
+  const startedDirtyVersion = syncDirtyVersion;
+  const hadLocalDirty = force || startedDirtyVersion !== syncedDirtyVersion;
+  const fullSync = force || !lastFullSyncAt || Date.now() - lastFullSyncAt > SYNC_FULL_INTERVAL_MS;
   let syncPaths = [];
   let localChanged = false;
   let settingsChanged = false;
+  let shouldWriteRemotes = false;
+  let syncSucceeded = false;
   const providers = [];
   try {
     syncPaths = await getEnabledSyncPaths();
-    if (!syncPaths.length) return;
+    if (!syncPaths.length) {
+      syncSucceeded = true;
+      return;
+    }
 
     let canonicalHistory = history;
     const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
 
     for (const syncPath of syncPaths) {
       const providerStartedAt = Date.now();
+      const signature = syncProviderSignature(syncPath);
+      const signatureKey = syncProviderSignatureKey(signature);
+      const cached = syncProviderCache.get(syncPath);
+      const remoteChanged = !cached || cached.signatureKey !== signatureKey;
+      const shouldReadRemote = fullSync || remoteChanged;
+      if (!shouldReadRemote && !hadLocalDirty) {
+        providers.push({
+          path: syncPath,
+          skipped: true,
+          remote_changed: false,
+          full_sync: false,
+          ms: Date.now() - providerStartedAt,
+        });
+        continue;
+      }
+
+      if (!shouldReadRemote) {
+        providers.push({
+          path: syncPath,
+          skipped: true,
+          remote_changed: false,
+          local_dirty: hadLocalDirty,
+          full_sync: false,
+          ms: Date.now() - providerStartedAt,
+        });
+        continue;
+      }
+
       const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
       syncTextBlobs(remoteTextDir);
       const { remoteHistory, remoteSettings } = readRemoteState(syncPath);
@@ -819,8 +903,12 @@ async function syncMerge() {
       canonicalHistory = mergeHistories(canonicalHistory, remoteHistory);
       syncImages(path.join(syncPath, 'clipboard-images'));
       syncTextBlobs(remoteTextDir);
+      updateSyncProviderCache(syncPath);
       providers.push({
         path: syncPath,
+        skipped: false,
+        remote_changed: remoteChanged,
+        full_sync: fullSync,
         remote_items: remoteHistory.length,
         canonical_items: canonicalHistory.length,
         ms: Date.now() - providerStartedAt,
@@ -834,14 +922,24 @@ async function syncMerge() {
       history.push(...canonicalHistory);
     }
     if (localChanged || settingsChanged) {
-      saveHistory();
-      saveSettingsFile();
+      applyingSyncState = true;
+      try {
+        saveHistory();
+        saveSettingsFile();
+      } finally {
+        applyingSyncState = false;
+      }
     }
 
+    shouldWriteRemotes = hadLocalDirty || localChanged || settingsChanged || providers.some(p => p.remote_changed || p.full_sync);
     const canonicalSettings = remoteSettingsPayload();
-    for (const syncPath of syncPaths) {
-      try { writeRemoteState(syncPath, history, canonicalSettings); } catch {}
+    if (shouldWriteRemotes) {
+      for (const syncPath of syncPaths) {
+        try { writeRemoteState(syncPath, history, canonicalSettings); } catch {}
+      }
     }
+    if (fullSync) lastFullSyncAt = Date.now();
+    syncSucceeded = true;
   } finally {
     const elapsed = Date.now() - startedAt;
     if (syncPaths.length || elapsed > 50 || diagnostics.isEnabled()) {
@@ -851,12 +949,25 @@ async function syncMerge() {
         paths: syncPaths,
         local_changed: localChanged,
         settings_changed: settingsChanged,
+        local_dirty: hadLocalDirty,
+        full_sync: fullSync,
+        wrote_remotes: shouldWriteRemotes,
         items: history.length,
         provider_timings: providers,
         slow: elapsed > 250,
       }, { forceFile: elapsed > 250 });
     }
     insideSync = false;
+    if (syncSucceeded && (hadLocalDirty || force) && syncDirtyVersion === startedDirtyVersion) {
+      syncedDirtyVersion = syncDirtyVersion;
+    }
+    if (syncPending) {
+      const pendingForce = syncPendingForce;
+      syncPending = false;
+      syncPendingForce = false;
+      const timer = setTimeout(() => syncMerge({ force: pendingForce }), 0);
+      if (timer.unref) timer.unref();
+    }
   }
 }
 
@@ -1646,7 +1757,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('sync-now', async () => {
-    await syncMerge();
+    await syncMerge({ force: true });
   });
 
   ipcMain.handle('check-for-updates', async () => {
@@ -1815,7 +1926,7 @@ app.whenReady().then(() => {
   autoUpdater.start();
 
   // Sync with shared folder on startup + every 30s
-  syncMerge();
+  syncMerge({ force: true });
   pollClipboard();
   setInterval(pollClipboard, 400);
   setInterval(() => syncMerge(), 30000);
