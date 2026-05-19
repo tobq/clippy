@@ -665,14 +665,6 @@ async function setSyncPathEnabled(syncPath, enabled) {
   }
 }
 
-function syncImages(remoteImgDir) {
-  blobStore.syncMissingFiles(IMG_DIR, remoteImgDir);
-}
-
-function syncTextBlobs(remoteTextDir) {
-  textBlobStore.syncTextBlobs(TEXT_DIR, remoteTextDir);
-}
-
 async function copyMissingFilesAsync(fromDir, toDir, filter = () => true) {
   try { await fs.promises.mkdir(toDir, { recursive: true }); } catch { return; }
   let names = [];
@@ -727,19 +719,23 @@ function scheduleSyncMerge() {
   syncDebounceTimer = setTimeout(syncMerge, 500);
 }
 
-function fileSignature(filePath) {
+async function fileSignature(filePath) {
   try {
-    const stats = fs.statSync(filePath);
+    const stats = await fs.promises.stat(filePath);
     return { exists: true, size: stats.size, mtimeMs: Math.round(stats.mtimeMs) };
   } catch {
     return { exists: false, size: 0, mtimeMs: 0 };
   }
 }
 
-function syncProviderSignature(syncPath) {
+async function syncProviderSignature(syncPath) {
+  const [history, settingsFile] = await Promise.all([
+    fileSignature(path.join(syncPath, 'clipboard-history.json')),
+    fileSignature(path.join(syncPath, 'clipboard-settings.json')),
+  ]);
   return {
-    history: fileSignature(path.join(syncPath, 'clipboard-history.json')),
-    settings: fileSignature(path.join(syncPath, 'clipboard-settings.json')),
+    history,
+    settings: settingsFile,
   };
 }
 
@@ -747,8 +743,8 @@ function syncProviderSignatureKey(signature) {
   return JSON.stringify(signature);
 }
 
-function updateSyncProviderCache(syncPath) {
-  const signature = syncProviderSignature(syncPath);
+async function updateSyncProviderCache(syncPath) {
+  const signature = await syncProviderSignature(syncPath);
   syncProviderCache.set(syncPath, {
     signature,
     signatureKey: syncProviderSignatureKey(signature),
@@ -756,17 +752,16 @@ function updateSyncProviderCache(syncPath) {
   });
 }
 
-function readRemoteState(syncPath) {
+async function readRemoteState(syncPath) {
   const remoteDbPath = path.join(syncPath, 'clipboard-history.json');
   const remoteSettingsPath = path.join(syncPath, 'clipboard-settings.json');
-  const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
   let remoteHistory = [];
   try {
-    const loaded = JSON.parse(fs.readFileSync(remoteDbPath, 'utf-8'));
-    if (Array.isArray(loaded)) remoteHistory = textBlobStore.hydrateHistory(loaded, remoteTextDir);
+    const loaded = JSON.parse(await fs.promises.readFile(remoteDbPath, 'utf-8'));
+    if (Array.isArray(loaded)) remoteHistory = textBlobStore.hydrateHistory(loaded, TEXT_DIR);
   } catch {}
   let remoteSettings = {};
-  try { remoteSettings = JSON.parse(fs.readFileSync(remoteSettingsPath, 'utf-8')); } catch {}
+  try { remoteSettings = JSON.parse(await fs.promises.readFile(remoteSettingsPath, 'utf-8')); } catch {}
   return { remoteHistory, remoteSettings };
 }
 
@@ -860,7 +855,7 @@ async function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
     wroteSettings ? atomicWriteFileAsync(remoteSettingsPath, nextSettingsJson) : Promise.resolve(),
     syncRemoteAssets(remoteImgDir, remoteTextDir),
   ]);
-  updateSyncProviderCache(syncPath);
+  await updateSyncProviderCache(syncPath);
   diagnostics.slow('sync.write_remote.slow', Date.now() - startedAt, {
     path: syncPath,
     items: canonicalHistory.length,
@@ -904,7 +899,7 @@ async function syncMerge(options = {}) {
 
     for (const syncPath of syncPaths) {
       const providerStartedAt = Date.now();
-      const signature = syncProviderSignature(syncPath);
+      const signature = await syncProviderSignature(syncPath);
       const signatureKey = syncProviderSignatureKey(signature);
       const cached = syncProviderCache.get(syncPath);
       const remoteChanged = !cached || cached.signatureKey !== signatureKey;
@@ -933,8 +928,9 @@ async function syncMerge(options = {}) {
       }
 
       const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
-      syncTextBlobs(remoteTextDir);
-      const { remoteHistory, remoteSettings } = readRemoteState(syncPath);
+      const remoteImgDir = path.join(syncPath, 'clipboard-images');
+      await syncRemoteAssets(remoteImgDir, remoteTextDir);
+      const { remoteHistory, remoteSettings } = await readRemoteState(syncPath);
       settings.tombstones = normalizeTombstones([
         ...(settings.tombstones || []),
         ...(remoteSettings.tombstones || []),
@@ -946,9 +942,7 @@ async function syncMerge(options = {}) {
       const historyGroups = canonicalHistory.flatMap(h => groupsOf(h));
       settings.groups = mergeGroups(settings.groups, [...(remoteSettings.groups || []), ...historyGroups]);
       canonicalHistory = mergeHistories(canonicalHistory, remoteHistory);
-      syncImages(path.join(syncPath, 'clipboard-images'));
-      syncTextBlobs(remoteTextDir);
-      updateSyncProviderCache(syncPath);
+      await updateSyncProviderCache(syncPath);
       providers.push({
         path: syncPath,
         skipped: false,
@@ -976,7 +970,7 @@ async function syncMerge(options = {}) {
       }
     }
 
-    shouldWriteRemotes = hadLocalDirty || localChanged || settingsChanged || providers.some(p => p.remote_changed || p.full_sync);
+    shouldWriteRemotes = hadLocalDirty || localChanged || settingsChanged;
     const canonicalSettings = remoteSettingsPayload();
     if (shouldWriteRemotes) {
       for (const syncPath of syncPaths) {

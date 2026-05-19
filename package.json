@@ -1,7 +1,7 @@
 {
   "name": "boardclip",
   "productName": "BoardClip",
-  "version": "2.0.22",
+  "version": "2.0.23",
   "description": "Cross-platform clipboard history tray app with numpad quick-paste and native cloud sync",
   "author": "BoardClip contributors",
   "main": "main.js",
@@ -17,7 +17,7 @@
   "build": {
     "appId": "app.boardclip.desktop",
     "productName": "BoardClip",
-    "icon": "icon@2x.png",
+    "icon": "assets/boardclip-icon.png",
     "asar": true,
     "files": [
       "main.js",
@@ -40,6 +40,7 @@
       "output": "dist"
     },
     "win": {
+      "icon": "assets/boardclip-icon.ico",
       "forceCodeSigning": false,
       "signAndEditExecutable": false,
       "target": [
@@ -60,6 +61,7 @@
       "category": "public.app-category.productivity"
     },
     "linux": {
+      "icon": "assets/boardclip-icon.png",
       "maintainer": "BoardClip contributors <hello@boardclip.app>",
       "target": [
         "AppImage",

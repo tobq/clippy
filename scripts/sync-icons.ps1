@@ -94,9 +94,35 @@ function Save-AppIcon {
   }
 }
 
+function Save-IcoFromPng {
+  param([string]$PngPath, [string]$OutputPath)
+  [byte[]]$png = [System.IO.File]::ReadAllBytes($PngPath)
+  $stream = New-Object System.IO.MemoryStream
+  $writer = New-Object System.IO.BinaryWriter($stream)
+  try {
+    $writer.Write([UInt16]0) # reserved
+    $writer.Write([UInt16]1) # icon
+    $writer.Write([UInt16]1) # image count
+    $writer.Write([byte]0)   # 256px
+    $writer.Write([byte]0)   # 256px
+    $writer.Write([byte]0)   # color count
+    $writer.Write([byte]0)   # reserved
+    $writer.Write([UInt16]1) # planes
+    $writer.Write([UInt16]32)
+    $writer.Write([UInt32]$png.Length)
+    $writer.Write([UInt32]22)
+    $writer.Write($png)
+    [System.IO.File]::WriteAllBytes($OutputPath, $stream.ToArray())
+  } finally {
+    $writer.Dispose()
+    $stream.Dispose()
+  }
+}
+
 Save-AppIcon 512 (Join-Path $Root "assets\boardclip-icon.png")
 Save-AppIcon 512 (Join-Path $Root "icon@2x.png")
 Save-AppIcon 256 (Join-Path $Root "icon.png")
 Save-AppIcon 256 (Join-Path $Root "site\favicon.png")
+Save-IcoFromPng (Join-Path $Root "icon.png") (Join-Path $Root "assets\boardclip-icon.ico")
 
 Write-Host "Synced BoardClip app, installer, and site icons"
