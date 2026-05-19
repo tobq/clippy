@@ -16,6 +16,27 @@ const clipboardCapture = require('./lib/clipboard-capture');
 const { createAutoUpdater, updateSupport } = require('./lib/auto-update');
 const syncPaths = require('./lib/sync-paths');
 
+function guardBrokenPipe(stream) {
+  try {
+    stream.on('error', err => {
+      if (!err || err.code === 'EPIPE') return;
+    });
+  } catch {}
+}
+
+function logSafe(...args) {
+  try { console.log(...args); } catch {}
+}
+
+guardBrokenPipe(process.stdout);
+guardBrokenPipe(process.stderr);
+for (const method of ['log', 'warn', 'error']) {
+  const original = console[method].bind(console);
+  console[method] = (...args) => {
+    try { original(...args); } catch {}
+  };
+}
+
 app.setName('BoardClip');
 
 // --- Paths ---
@@ -857,7 +878,7 @@ function pollClipboard() {
     const elapsed = Date.now() - startedAt;
     if (elapsed > SLOW_CLIPBOARD_POLL_MS && Date.now() - lastSlowPollLogAt > 5000) {
       lastSlowPollLogAt = Date.now();
-      console.log(`Slow clipboard poll: ${elapsed}ms (${formatsKey || 'unknown formats'})`);
+      logSafe(`Slow clipboard poll: ${elapsed}ms (${formatsKey || 'unknown formats'})`);
     }
   }
 }
@@ -1062,7 +1083,7 @@ function ensurePopupRendererResponsive() {
   let settled = false;
   const timer = setTimeout(() => {
     if (settled || !win || win.isDestroyed() || !win.isVisible()) return;
-    console.log('BoardClip popup renderer did not respond after show; reloading.');
+    logSafe('BoardClip popup renderer did not respond after show; reloading.');
     win.webContents.once('did-finish-load', () => resetPopupRendererState());
     win.webContents.reloadIgnoringCache();
   }, 800);
@@ -1578,7 +1599,7 @@ function registerShortcuts() {
     if (macosFnShowKey) {
       const result = hook.install({ shortcut: macosFnShowKey, onPressed: showPopup });
       showShortcutRegistered = !!result.ok;
-      if (!result.ok) console.log(`Warning: ${result.error}`);
+      if (!result.ok) logSafe(`Warning: ${result.error}`);
     } else if (hook) {
       hook.clearRuntimeShortcut();
     }
@@ -1586,7 +1607,7 @@ function registerShortcuts() {
 
   if (showKey) {
     showShortcutRegistered = globalShortcut.register(showKey, showPopup);
-    if (!showShortcutRegistered) console.log(`Warning: Could not register popup shortcut ${showKey}`);
+    if (!showShortcutRegistered) logSafe(`Warning: Could not register popup shortcut ${showKey}`);
   }
 
   if (process.platform === 'win32') {
@@ -1597,7 +1618,7 @@ function registerShortcuts() {
     const key = `Super+num${n}`;
     const slot = n;
     const registered = globalShortcut.register(key, () => handleNumpad(slot));
-    if (!registered) console.log(`Warning: Could not register ${key}`);
+    if (!registered) logSafe(`Warning: Could not register ${key}`);
   }
 
   return { showShortcutRegistered, showShortcut: effectiveShowShortcut() };
@@ -1608,7 +1629,7 @@ nativeTheme.on('updated', notifyColorSchemeChanged);
 // --- Single instance lock ---
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
-  console.log('Another instance is already running. Quitting.');
+  logSafe('Another instance is already running. Quitting.');
   app.quit();
 }
 app.on('second-instance', () => {
@@ -1650,7 +1671,7 @@ app.whenReady().then(() => {
   setInterval(pollClipboard, 400);
   setInterval(() => syncMerge(), 30000);
 
-  console.log(`BoardClip running. ${effectiveShowShortcut()} to open popup.`);
+  logSafe(`BoardClip running. ${effectiveShowShortcut()} to open popup.`);
 });
 
 app.on('will-quit', () => {
