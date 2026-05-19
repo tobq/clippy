@@ -17,6 +17,7 @@ const clipboardCapture = require('./lib/clipboard-capture');
 const textBlobStore = require('./lib/text-blob-store');
 const { createAutoUpdater, updateSupport } = require('./lib/auto-update');
 const syncPaths = require('./lib/sync-paths');
+const { Diagnostics } = require('./lib/diagnostics');
 
 function guardBrokenPipe(stream) {
   try {
@@ -48,6 +49,7 @@ const SETTINGS_PATH = path.join(SCRIPT_DIR, 'clipboard-settings.json');
 const IMG_DIR = path.join(SCRIPT_DIR, 'clipboard-images');
 const TEXT_DIR = path.join(SCRIPT_DIR, textBlobStore.TEXT_BLOB_DIRNAME);
 const APP_ICON_PATH = path.join(SCRIPT_DIR, 'icon.png');
+const DIAGNOSTICS_PATH = path.join(SCRIPT_DIR, 'boardclip-diagnostics.jsonl');
 
 function windowsStartupDir() {
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
@@ -172,6 +174,8 @@ function loadSettings() {
 }
 
 function saveSettingsFile() {
+  const startedAt = Date.now();
+  const previousDiagnosticsEnabled = diagnostics.isEnabled();
   migrateSyncSettings();
   const s = { ...settings };
   s.tombstones = normalizeTombstones(s.tombstones);
@@ -180,17 +184,65 @@ function saveSettingsFile() {
   settings.group_tombstones = s.group_tombstones;
   delete s.numpad_slots;
   atomicWriteJson(SETTINGS_PATH, s, 2);
+  diagnostics.setEnabled(process.env.BOARDCLIP_DIAGNOSTICS === '1' || !!settings.diagnostics_enabled);
+  diagnostics.slow('settings.save.slow', Date.now() - startedAt, {
+    bytes: Buffer.byteLength(JSON.stringify(s)),
+    diagnostics_changed: previousDiagnosticsEnabled !== diagnostics.isEnabled(),
+  }, 50);
   dataRevision++;
   notifyDataChanged();
   scheduleSyncMerge();
 }
 
 let settings = loadSettings();
+const diagnostics = new Diagnostics({
+  filePath: DIAGNOSTICS_PATH,
+  enabled: process.env.BOARDCLIP_DIAGNOSTICS === '1' || !!settings.diagnostics_enabled,
+});
 let dataRevision = 0;
 let cloudAccountsCache = [];
 let cloudAccountsCacheAt = 0;
 const CLOUD_ACCOUNTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_SHOW_SHORTCUT = 'CommandOrControl+Shift+V';
+let diagnosticsLoopExpectedAt = 0;
+let diagnosticsCpu = process.cpuUsage();
+
+function runtimeDiagnosticSnapshot() {
+  const memory = process.memoryUsage();
+  return {
+    platform: process.platform,
+    build: BUILD_INFO && BUILD_INFO.label,
+    pid: process.pid,
+    uptime_s: Math.round(process.uptime()),
+    rss_mb: Math.round(memory.rss / 1048576),
+    heap_used_mb: Math.round(memory.heapUsed / 1048576),
+    history_items: history ? history.length : 0,
+    groups: settings.groups ? settings.groups.length : 0,
+    diagnostics_enabled: diagnostics.isEnabled(),
+  };
+}
+
+function startDiagnosticsMonitor() {
+  diagnostics.record('app.start', runtimeDiagnosticSnapshot(), { forceFile: true });
+  diagnosticsLoopExpectedAt = Date.now() + 1000;
+  const timer = setInterval(() => {
+    const now = Date.now();
+    const lag = now - diagnosticsLoopExpectedAt;
+    diagnosticsLoopExpectedAt = now + 1000;
+    const cpu = process.cpuUsage();
+    const cpuDeltaUs = (cpu.user - diagnosticsCpu.user) + (cpu.system - diagnosticsCpu.system);
+    diagnosticsCpu = cpu;
+    const forceFile = lag > 250 || cpuDeltaUs > 800000;
+    if (forceFile || diagnostics.isEnabled()) {
+      diagnostics.record('main.heartbeat', {
+        ...runtimeDiagnosticSnapshot(),
+        event_loop_lag_ms: Math.max(0, Math.round(lag)),
+        cpu_ms_last_s: Math.round(cpuDeltaUs / 1000),
+      }, { forceFile });
+    }
+  }, 1000);
+  if (timer.unref) timer.unref();
+}
 
 function defaultShowShortcut() {
   return process.platform === 'win32' ? 'Super+V' : DEFAULT_SHOW_SHORTCUT;
@@ -262,7 +314,12 @@ function writeHistoryStorageFile() {
 }
 
 function saveHistory() {
+  const startedAt = Date.now();
   writeHistoryStorageFile();
+  diagnostics.slow('history.save.slow', Date.now() - startedAt, {
+    items: history.length,
+    file_bytes: fileSummary(DB_PATH).size || 0,
+  }, 75);
   dataRevision++;
   notifyDataChanged();
   scheduleSyncMerge();
@@ -678,6 +735,10 @@ async function syncDiagnostics() {
     platform: process.platform,
     app_dir: SCRIPT_DIR,
     build: BUILD_INFO,
+    runtime: runtimeDiagnosticSnapshot(),
+    diagnostics: diagnostics.snapshot({
+      log_tail: diagnostics.fileTail(),
+    }),
     local: stateSummary(SCRIPT_DIR),
     sync_disabled_paths: settings.sync_disabled_paths || [],
     legacy_sync_path: settings.sync_path || '',
@@ -694,6 +755,7 @@ async function syncDiagnostics() {
 }
 
 function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
+  const startedAt = Date.now();
   if (!fs.existsSync(syncPath)) fs.mkdirSync(syncPath, { recursive: true });
   const remoteDbPath = path.join(syncPath, 'clipboard-history.json');
   const remoteSettingsPath = path.join(syncPath, 'clipboard-settings.json');
@@ -705,24 +767,44 @@ function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   let currentSettingsJson = null;
   try { currentHistoryJson = fs.readFileSync(remoteDbPath, 'utf-8'); } catch {}
   try { currentSettingsJson = fs.readFileSync(remoteSettingsPath, 'utf-8'); } catch {}
-  if (currentHistoryJson !== nextHistoryJson) atomicWriteFile(remoteDbPath, nextHistoryJson);
-  if (currentSettingsJson !== nextSettingsJson) atomicWriteFile(remoteSettingsPath, nextSettingsJson);
+  const wroteHistory = currentHistoryJson !== nextHistoryJson;
+  const wroteSettings = currentSettingsJson !== nextSettingsJson;
+  if (wroteHistory) atomicWriteFile(remoteDbPath, nextHistoryJson);
+  if (wroteSettings) atomicWriteFile(remoteSettingsPath, nextSettingsJson);
   syncImages(remoteImgDir);
   syncTextBlobs(remoteTextDir);
+  diagnostics.slow('sync.write_remote.slow', Date.now() - startedAt, {
+    path: syncPath,
+    items: canonicalHistory.length,
+    history_bytes: Buffer.byteLength(nextHistoryJson),
+    settings_bytes: Buffer.byteLength(nextSettingsJson),
+    wrote_history: wroteHistory,
+    wrote_settings: wroteSettings,
+  }, 150);
 }
 
 async function syncMerge() {
-  if (insideSync) return;
+  if (insideSync) {
+    diagnostics.record('sync.skip_inside_sync', { items: history.length });
+    return;
+  }
   insideSync = true;
+  const startedAt = Date.now();
+  let syncPaths = [];
+  let localChanged = false;
+  let settingsChanged = false;
+  const providers = [];
   try {
-    const syncPaths = await getEnabledSyncPaths();
+    syncPaths = await getEnabledSyncPaths();
     if (!syncPaths.length) return;
 
     let canonicalHistory = history;
     const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
 
     for (const syncPath of syncPaths) {
-      syncTextBlobs(path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME));
+      const providerStartedAt = Date.now();
+      const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
+      syncTextBlobs(remoteTextDir);
       const { remoteHistory, remoteSettings } = readRemoteState(syncPath);
       settings.tombstones = normalizeTombstones([
         ...(settings.tombstones || []),
@@ -736,11 +818,17 @@ async function syncMerge() {
       settings.groups = mergeGroups(settings.groups, [...(remoteSettings.groups || []), ...historyGroups]);
       canonicalHistory = mergeHistories(canonicalHistory, remoteHistory);
       syncImages(path.join(syncPath, 'clipboard-images'));
-      syncTextBlobs(path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME));
+      syncTextBlobs(remoteTextDir);
+      providers.push({
+        path: syncPath,
+        remote_items: remoteHistory.length,
+        canonical_items: canonicalHistory.length,
+        ms: Date.now() - providerStartedAt,
+      });
     }
 
-    const localChanged = JSON.stringify(canonicalHistory) !== JSON.stringify(history);
-    const settingsChanged = JSON.stringify(remoteSettingsPayload()) !== previousSettingsJson;
+    localChanged = JSON.stringify(canonicalHistory) !== JSON.stringify(history);
+    settingsChanged = JSON.stringify(remoteSettingsPayload()) !== previousSettingsJson;
     if (localChanged) {
       history.length = 0;
       history.push(...canonicalHistory);
@@ -754,7 +842,22 @@ async function syncMerge() {
     for (const syncPath of syncPaths) {
       try { writeRemoteState(syncPath, history, canonicalSettings); } catch {}
     }
-  } finally { insideSync = false; }
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    if (syncPaths.length || elapsed > 50 || diagnostics.isEnabled()) {
+      diagnostics.record('sync.merge', {
+        ms: elapsed,
+        providers: providers.length,
+        paths: syncPaths,
+        local_changed: localChanged,
+        settings_changed: settingsChanged,
+        items: history.length,
+        provider_timings: providers,
+        slow: elapsed > 250,
+      }, { forceFile: elapsed > 250 });
+    }
+    insideSync = false;
+  }
 }
 
 // --- Image helpers ---
@@ -796,6 +899,7 @@ function formatsContainImage(formatsKey) {
 }
 
 function addToHistory(entry, matchFn) {
+  const startedAt = Date.now();
   ensureItemId(entry);
   const beforeTombstones = normalizeTombstones(settings.tombstones);
   settings.tombstones = beforeTombstones.filter(t => t.id !== itemKey(entry));
@@ -818,6 +922,13 @@ function addToHistory(entry, matchFn) {
   pruneHistory();
   if (tombstoneRemoved) saveSettingsFile();
   saveHistory();
+  diagnostics.record('history.add', {
+    type: entry.type,
+    text_length: entry.type === 'text' ? (entry.text || '').length : undefined,
+    image: entry.type === 'image' ? { width: entry.width, height: entry.height } : undefined,
+    items: history.length,
+    ms: Date.now() - startedAt,
+  });
 }
 
 function pollClipboard() {
@@ -825,6 +936,7 @@ function pollClipboard() {
 
   const startedAt = Date.now();
   let formatsKey = '';
+  let action = 'none';
   try {
     const formats = clipboardFormats();
     formatsKey = clipboardCapture.formatsKey(formats);
@@ -832,9 +944,11 @@ function pollClipboard() {
       const now = Date.now();
       const probeToken = clipboardCapture.clipboardChangeToken(formats);
       if (probeToken && probeToken === lastCapturedImageToken) {
+        action = 'image_probe_throttled';
         return;
       }
       if (probeToken === lastImageProbeToken && now - lastImageProbeAt < IMAGE_CLIPBOARD_PROBE_MS) {
+        action = 'image_probe_throttled';
         return;
       }
       lastImageProbeToken = probeToken;
@@ -846,6 +960,7 @@ function pollClipboard() {
       const buf = captured.buffer;
       const h = imageHash(buf);
       if (h !== lastImgHash) {
+        action = 'image_added';
         lastImgHash = h;
         lastText = '';
         const { fname, width, height } = saveClipboardImageBuffer(h, buf, captured);
@@ -861,6 +976,7 @@ function pollClipboard() {
     lastCapturedImageToken = '';
     const text = clipboard.readText();
     if (text && text !== lastText) {
+      action = 'text_added';
       lastText = text;
       lastImgHash = '';
       addToHistory(
@@ -869,11 +985,23 @@ function pollClipboard() {
       );
     }
   } catch {
+    action = 'error';
   } finally {
     const elapsed = Date.now() - startedAt;
     if (elapsed > SLOW_CLIPBOARD_POLL_MS && Date.now() - lastSlowPollLogAt > 5000) {
       lastSlowPollLogAt = Date.now();
       logSafe(`Slow clipboard poll: ${elapsed}ms (${formatsKey || 'unknown formats'})`);
+      diagnostics.record('clipboard.poll.slow', {
+        ms: elapsed,
+        formats: formatsKey || 'unknown',
+        action,
+      }, { forceFile: true });
+    } else if (diagnostics.isEnabled() && action !== 'none' && action !== 'image_probe_throttled') {
+      diagnostics.record('clipboard.poll', {
+        ms: elapsed,
+        formats: formatsKey || 'unknown',
+        action,
+      });
     }
   }
 }
@@ -1064,11 +1192,18 @@ function stopClickAwayWatcher() {
 
 function resetPopupRendererState() {
   if (!win || win.isDestroyed() || !win.webContents || win.webContents.isDestroyed()) return Promise.resolve(false);
+  const startedAt = Date.now();
   return win.webContents.executeJavaScript(`
     window.resetPopupState?.();
     window.focusSearch?.();
     true;
-  `).catch(() => false);
+  `).then((result) => {
+    diagnostics.slow('popup.renderer_reset.slow', Date.now() - startedAt, { result: !!result }, 100);
+    return result;
+  }).catch((error) => {
+    diagnostics.record('popup.renderer_reset.error', { ms: Date.now() - startedAt, error: error && error.message }, { forceFile: true });
+    return false;
+  });
 }
 
 function ensurePopupRendererResponsive() {
@@ -1079,6 +1214,7 @@ function ensurePopupRendererResponsive() {
   const timer = setTimeout(() => {
     if (settled || !win || win.isDestroyed() || !win.isVisible()) return;
     logSafe('BoardClip popup renderer did not respond after show; reloading.');
+    diagnostics.record('popup.renderer_unresponsive', { timeout_ms: 800 }, { forceFile: true });
     win.webContents.once('did-finish-load', () => resetPopupRendererState());
     win.webContents.reloadIgnoringCache();
   }, 800);
@@ -1117,6 +1253,7 @@ function startClickAwayWatcher() {
 }
 
 function hidePopup() {
+  diagnostics.record('popup.hide', { visible: !!(win && !win.isDestroyed() && win.isVisible()), items: history.length });
   if (win && !win.isDestroyed()) win.hide();
   if (windowsHook) windowsHook.setPopupVisible(false);
   stopClickAwayWatcher();
@@ -1124,6 +1261,7 @@ function hidePopup() {
 
 function showPopup() {
   if (!win) return;
+  const startedAt = Date.now();
   if (win.isVisible()) {
     hidePopup();
     return;
@@ -1157,6 +1295,11 @@ function showPopup() {
   ensurePopupRendererResponsive();
   if (windowsHook) windowsHook.setPopupVisible(true);
   startClickAwayWatcher();
+  diagnostics.record('popup.show', {
+    ms: Date.now() - startedAt,
+    items: history.length,
+    platform: process.platform,
+  });
 }
 
 function setClipboardToItem(item) {
@@ -1279,6 +1422,7 @@ function setupIPC() {
         app_dir: SCRIPT_DIR,
         auto_update: support.supported,
         update_support: support,
+        diagnostics_file: DIAGNOSTICS_PATH,
       };
     })(),
     shortcut_info: {
@@ -1378,6 +1522,7 @@ function setupIPC() {
     if (body.max_age_days !== undefined) settings.max_age_days = Math.max(1, parseInt(body.max_age_days));
     if (body.max_size_gb !== undefined) settings.max_size_gb = Math.max(0.1, parseFloat(body.max_size_gb));
     if (body.regex_search !== undefined) settings.regex_search = !!body.regex_search;
+    if (body.diagnostics_enabled !== undefined) settings.diagnostics_enabled = !!body.diagnostics_enabled;
     saveSettingsFile();
     pruneHistory();
   });
@@ -1494,6 +1639,11 @@ function setupIPC() {
 
   ipcMain.handle('get-cloud-accounts', () => getCloudAccountsForSettings());
   ipcMain.handle('get-sync-diagnostics', () => syncDiagnostics());
+  ipcMain.handle('record-diagnostics', (_, event, details) => {
+    const forceFile = !!(details && details.slow && !diagnostics.isEnabled());
+    if (!diagnostics.isEnabled() && !forceFile) return;
+    diagnostics.record(`renderer.${event || 'event'}`, details || {}, { forceFile });
+  });
 
   ipcMain.handle('sync-now', async () => {
     await syncMerge();
@@ -1661,6 +1811,7 @@ app.whenReady().then(() => {
   createPopup();
   createTray();
   registerShortcuts();
+  startDiagnosticsMonitor();
   autoUpdater.start();
 
   // Sync with shared folder on startup + every 30s

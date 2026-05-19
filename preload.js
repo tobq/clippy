@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   setSyncPathEnabled: (path, enabled) => ipcRenderer.invoke('set-sync-path-enabled', path, enabled),
   getCloudAccounts: () => ipcRenderer.invoke('get-cloud-accounts'),
   getSyncDiagnostics: () => ipcRenderer.invoke('get-sync-diagnostics'),
+  recordDiagnostics: (event, details) => ipcRenderer.invoke('record-diagnostics', event, details),
   syncNow: () => ipcRenderer.invoke('sync-now'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),

@@ -152,6 +152,15 @@ document.getElementById('popupShell').innerHTML = Core.renderPopupShell({
       <div class="settings-status" id="updateStatus"></div>
     </div>
     <div class="settings-section">
+      <h3>Diagnostics</h3>
+      <label class="setting-row switch-row" for="diagnosticsEnabled">
+        <span>Performance logging</span>
+        <input id="diagnosticsEnabled" type="checkbox">
+        <span class="switch" aria-hidden="true"></span>
+      </label>
+      <div class="settings-status" id="diagnosticsStatus"></div>
+    </div>
+    <div class="settings-section">
       <h3>Groups</h3>
       <div id="groupSlots"></div>
       <button class="add-group-btn" id="addGroupBtn"><span class="mi" style="font-size:14px;vertical-align:middle">add</span> New Group</button>
@@ -177,8 +186,25 @@ const SEARCH_PREVIEW_CONTEXT = 260;
 let rendered = 0, filtered = [];
 let groups = [], activeFilters = new Set();
 let dataRevision = -1;
+let diagnosticsEnabled = false;
 let searchTexts = [], searchTextLower = [];
 let itemLookup = new Map(), groupCounts = new Map(), builtinCounts = {}, numpadIdMap = {};
+
+function recordRendererPerf(event, startedAt, details = {}, thresholdMs = 50) {
+  const ms = performance.now() - startedAt;
+  if (!diagnosticsEnabled && ms < thresholdMs) return ms;
+  const promise = window.api.recordDiagnostics?.(event, {
+    ...details,
+    ms: Math.round(ms),
+    items: items.length,
+    filtered: filtered.length,
+    query_length: query.length,
+    filters: activeFilters.size,
+    slow: ms >= thresholdMs,
+  });
+  if (promise && promise.catch) promise.catch(() => {});
+  return ms;
+}
 
 function applyColorScheme(scheme) {
   document.documentElement.dataset.theme = scheme === 'light' ? 'light' : 'dark';
@@ -251,6 +277,7 @@ function itemById(id) { return itemLookup.get(id) || items.find(it => itemId(it)
 function showToast(msg) { toast.textContent = msg||'Copied'; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(()=>toast.classList.remove('show'),1200); }
 
 function rebuildItemIndexes() {
+  const startedAt = performance.now();
   searchTexts = [];
   searchTextLower = [];
   itemLookup = new Map();
@@ -273,6 +300,12 @@ function rebuildItemIndexes() {
     searchTexts.push(searchText);
     searchTextLower.push(searchText.toLowerCase());
   });
+  recordRendererPerf('indexes.rebuild', startedAt, {
+    search_text_bytes: searchTexts.reduce((sum, text) => sum + text.length, 0),
+    groups: groupCounts.size,
+    numbered: builtinCounts.__numbered__ || 0,
+    images: builtinCounts.__images__ || 0,
+  }, 75);
 }
 
 // --- Numpad slot map ---
@@ -282,21 +315,26 @@ function numpadMap() {
 
 // --- Group filter tags ---
 function renderGroupFilters() {
+  const startedAt = performance.now();
   const el = document.getElementById('groupFilters');
   el.innerHTML = Core.renderFilterBar({ items, groups, activeFilters, query, builtinCounts, groupCounts });
+  recordRendererPerf('filters.render_bar', startedAt, { groups: groups.length }, 40);
 }
 
 function applyFilter() {
+  const startedAt = performance.now();
   filtered = Core.filterItemIndexes(items, { query, regex: regexOn, filters: activeFilters, searchTexts, searchTextLower });
   rendered = 0;
   listEl.innerHTML = '';
   selectedIdx = -1;
   loadBatch();
   if (!filtered.length) listEl.innerHTML = `<div class="empty">${query || activeFilters.size ? 'No matches' : 'Copy something to get started'}</div>`;
+  recordRendererPerf('list.apply_filter', startedAt, { rendered, regex: regexOn }, 60);
 }
 
 let rerenderFrame = null;
 function rerenderList() {
+  const startedAt = performance.now();
   if (rerenderFrame) {
     cancelAnimationFrame(rerenderFrame);
     rerenderFrame = null;
@@ -305,6 +343,7 @@ function rerenderList() {
   applyFilter();
   updateCount();
   scheduleRelativeTimeRefresh();
+  recordRendererPerf('list.rerender', startedAt, { rendered }, 90);
 }
 
 function scheduleRerenderList() {
@@ -316,7 +355,9 @@ function scheduleRerenderList() {
 }
 
 function loadBatch() {
+  const startedAt = performance.now();
   const end = Math.min(rendered + BATCH, filtered.length);
+  const batch = end - rendered;
   const nmap = numpadMap();
   const frag = document.createDocumentFragment();
   for (let fi = rendered; fi < end; fi++) {
@@ -327,6 +368,7 @@ function loadBatch() {
   listEl.appendChild(frag);
   rendered = end;
   scheduleRelativeTimeRefresh();
+  recordRendererPerf('list.load_batch', startedAt, { batch, rendered }, 60);
 }
 
 let relativeTimeTimer = null;
@@ -926,6 +968,22 @@ async function openSettings() {
   maxSizeEl.value = s.max_size_gb;
   maxAgeEl.onchange = () => window.api.saveSettings({ max_age_days: parseInt(maxAgeEl.value) || 7 });
   maxSizeEl.onchange = () => window.api.saveSettings({ max_size_gb: parseFloat(maxSizeEl.value) || 10 });
+  const diagnosticsEl = document.getElementById('diagnosticsEnabled');
+  const diagnosticsStatus = document.getElementById('diagnosticsStatus');
+  const diagnosticsFile = s.runtime_info && s.runtime_info.diagnostics_file || '';
+  const updateDiagnosticsStatus = () => {
+    diagnosticsStatus.textContent = diagnosticsEnabled ? 'Writing performance log' : 'Off';
+    diagnosticsStatus.title = diagnosticsEnabled ? diagnosticsFile : '';
+    diagnosticsStatus.className = `settings-status${diagnosticsEnabled ? ' active' : ''}`;
+  };
+  diagnosticsEnabled = !!s.diagnostics_enabled;
+  diagnosticsEl.checked = diagnosticsEnabled;
+  updateDiagnosticsStatus();
+  diagnosticsEl.onchange = async (e) => {
+    diagnosticsEnabled = !!e.target.checked;
+    await window.api.saveSettings({ diagnostics_enabled: diagnosticsEnabled });
+    updateDiagnosticsStatus();
+  };
   regexOn = s.regex_search || false;
   regexBtn.classList.toggle('active', regexOn);
   const bytes = s.storage_bytes || 0;
@@ -1046,10 +1104,13 @@ function closeSettings() {
 
 // --- Groups refresh ---
 async function refreshGroups({render = true} = {}) {
+  const startedAt = performance.now();
   try {
     const s = await window.api.getSettings();
     groups = s.groups || [];
+    diagnosticsEnabled = !!s.diagnostics_enabled;
     if (render) renderGroupFilters();
+    recordRendererPerf('settings.refresh_groups', startedAt, { groups: groups.length, render }, 75);
   } catch {}
 }
 
@@ -1060,6 +1121,7 @@ async function refreshGroupsAndList() {
 
 // --- Data refresh ---
 async function refresh({force = false} = {}) {
+  const startedAt = performance.now();
   try {
     const state = window.api.getHistoryState ? await window.api.getHistoryState() : {revision: Date.now(), items: await window.api.getHistory()};
     const data = state.items || [];
@@ -1070,6 +1132,7 @@ async function refresh({force = false} = {}) {
       rebuildItemIndexes();
     }
     if (changed || force) rerenderList();
+    recordRendererPerf('history.refresh', startedAt, { changed, force, revision: state.revision }, 100);
   } catch {}
 }
 

@@ -11,6 +11,7 @@ const syncPaths = require('../lib/sync-paths');
 const clipboardCapture = require('../lib/clipboard-capture');
 const windowsClipboard = require('../lib/windows-clipboard');
 const textBlobStore = require('../lib/text-blob-store');
+const { Diagnostics } = require('../lib/diagnostics');
 
 function text(text, extra = {}) {
   const item = { type: 'text', text, ts: 1, ...extra };
@@ -235,6 +236,26 @@ function text(text, extra = {}) {
     assert.strictEqual(fallback.text, longText);
     assert.strictEqual(fallback.textRef, undefined);
     assert.strictEqual(fallback.textHash, undefined);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'boardclip-diagnostics-'));
+  const file = path.join(dir, 'diagnostics.jsonl');
+  try {
+    const diagnostics = new Diagnostics({ filePath: file, enabled: false });
+    diagnostics.record('ignored', { value: 'nope' });
+    assert.strictEqual(fs.existsSync(file), false);
+    diagnostics.slow('slow-path', 101, { value: 'ok' }, 100);
+    assert(fs.readFileSync(file, 'utf8').includes('"event":"slow-path"'));
+    diagnostics.setEnabled(true);
+    diagnostics.record('enabled-path', { secret: 'x'.repeat(600) });
+    const lines = fs.readFileSync(file, 'utf8');
+    assert(lines.includes('"event":"enabled-path"'));
+    assert(!lines.includes('x'.repeat(600)));
+    assert.strictEqual(diagnostics.snapshot().recent_events.length, 4);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
