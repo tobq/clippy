@@ -66,6 +66,8 @@ const P2P_PROTOCOL_VERSION = 1;
 const P2P_ANNOUNCE_INTERVAL_MS = 2000;
 const P2P_PULL_THROTTLE_MS = 1000;
 const P2P_HTTP_TIMEOUT_MS = 5000;
+const P2P_MANUAL_PULL_TIMEOUT_MS = 10000;
+const P2P_ASSET_FETCH_CONCURRENCY = 8;
 const P2P_AUTH_WINDOW_MS = 60 * 1000;
 
 function windowsStartupDir() {
@@ -1392,6 +1394,18 @@ async function p2pFetchMissingAsset(peer, kind, name) {
   return true;
 }
 
+async function runWithConcurrency(items, limit, worker) {
+  const list = Array.isArray(items) ? items : [];
+  const workerCount = Math.min(Math.max(1, limit || 1), list.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < list.length) {
+      const item = list[nextIndex++];
+      await worker(item);
+    }
+  }));
+}
+
 async function p2pPullPeer(peer, reason = 'discovery') {
   if (!p2pEnabled() || !peer || peer.deviceId === settings.p2p_device_id) return null;
   const existing = p2p.pulls.get(peer.deviceId);
@@ -1404,12 +1418,13 @@ async function p2pPullPeer(peer, reason = 'discovery') {
     if (!state || state.protocol !== P2P_PROTOCOL_VERSION || state.deviceId !== peer.deviceId) {
       throw new Error('invalid peer state');
     }
-    for (const name of state.images || []) {
-      if (await p2pFetchMissingAsset(peer, 'image', name)) fetchedAssets++;
-    }
-    for (const ref of state.texts || []) {
-      if (await p2pFetchMissingAsset(peer, 'text', ref)) fetchedAssets++;
-    }
+    const assets = [
+      ...(state.images || []).map(name => ({ kind: 'image', name })),
+      ...(state.texts || []).map(name => ({ kind: 'text', name })),
+    ];
+    await runWithConcurrency(assets, P2P_ASSET_FETCH_CONCURRENCY, async asset => {
+      if (await p2pFetchMissingAsset(peer, asset.kind, asset.name)) fetchedAssets++;
+    });
 
     const remoteHistory = textBlobStore.hydrateHistory(Array.isArray(state.history) ? state.history : [], TEXT_DIR);
     const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
@@ -1629,7 +1644,7 @@ async function syncMerge(options = {}) {
   const startedAt = Date.now();
   const force = !!(options && options.force);
   const startedDirtyVersion = syncDirtyVersion;
-  const hadLocalDirty = force || startedDirtyVersion !== syncedDirtyVersion;
+  const hadLocalDirty = startedDirtyVersion !== syncedDirtyVersion;
   const fullSync = force || !lastFullSyncAt || Date.now() - lastFullSyncAt > SYNC_FULL_INTERVAL_MS;
   let syncPaths = [];
   let localChanged = false;
@@ -1650,6 +1665,7 @@ async function syncMerge(options = {}) {
         local_changed: false,
         settings_changed: false,
         local_dirty: hadLocalDirty,
+        force_read: force,
         full_sync: fullSync,
         wrote_remotes: false,
         items: history.length,
@@ -1751,6 +1767,7 @@ async function syncMerge(options = {}) {
       local_changed: localChanged,
       settings_changed: settingsChanged,
       local_dirty: hadLocalDirty,
+      force_read: force,
       full_sync: fullSync,
       recovered_images: recoveredImages,
       wrote_remotes: shouldWriteRemotes,
@@ -1772,6 +1789,7 @@ async function syncMerge(options = {}) {
         local_changed: localChanged,
         settings_changed: settingsChanged,
         local_dirty: hadLocalDirty,
+        force_read: force,
         full_sync: fullSync,
         recovered_images: recoveredImages,
         wrote_remotes: shouldWriteRemotes,
@@ -1788,6 +1806,7 @@ async function syncMerge(options = {}) {
         local_changed: localChanged,
         settings_changed: settingsChanged,
         local_dirty: hadLocalDirty,
+        force_read: force,
         full_sync: fullSync,
         recovered_images: recoveredImages,
         wrote_remotes: shouldWriteRemotes,
@@ -2676,8 +2695,22 @@ function setupIPC() {
 
   ipcMain.handle('sync-now', async () => {
     const peers = p2pPeerSummaries();
-    await Promise.all(peers.map(peer => p2pPullPeer(peer, 'manual')));
-    return syncMerge({ force: true });
+    const p2pResults = await Promise.all(peers.map(peer => (
+      withTimeout(
+        p2pPullPeer(peer, 'manual'),
+        P2P_MANUAL_PULL_TIMEOUT_MS,
+        `p2p pull ${peer.deviceName || peer.deviceId}`
+      ).catch(error => {
+        diagnostics.record('p2p.manual_pull.error', {
+          peer: peer.deviceName || peer.deviceId,
+          error: error && error.message,
+        }, { forceFile: true });
+        return { ok: false, peer: peer.deviceName || peer.deviceId, error: error && error.message };
+      })
+    )));
+    const result = await syncMerge({ force: true });
+    if (result) result.p2p = p2pResults;
+    return result;
   });
 
   ipcMain.handle('check-for-updates', async () => {
