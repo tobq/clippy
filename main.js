@@ -59,6 +59,8 @@ const HISTORY_BACKUP_MIN_INTERVAL_MS = 60 * 1000;
 const IMAGE_ORPHAN_RECOVERY_WINDOW_MS = 30 * 60 * 1000;
 const IMAGE_ORPHAN_RECOVERY_MAX_FILES = 20;
 const SYNC_REMOTE_WRITE_TIMEOUT_MS = 8000;
+const SYNC_PROVIDER_READ_TIMEOUT_MS = 12000;
+const SYNC_ASSET_COPY_CONCURRENCY = 8;
 const CONTENT_IMAGE_RE = /^([a-f0-9]{12})(?: \(\d+\))?\.png$/i;
 const P2P_DISCOVERY_ADDR = '239.255.43.21';
 const P2P_DISCOVERY_PORT = 45454;
@@ -849,35 +851,40 @@ async function setSyncPathEnabled(syncPath, enabled) {
   }
 }
 
-async function copyMissingFilesAsync(fromDir, toDir, filter = () => true) {
-  try { await fs.promises.mkdir(toDir, { recursive: true }); } catch { return; }
-  let names = [];
-  try { names = await fs.promises.readdir(fromDir); } catch { return; }
-  for (const name of names) {
-    if (!filter(name)) continue;
-    const source = path.join(fromDir, name);
-    const dest = path.join(toDir, name);
+async function copyNamedFilesAsync(fromDir, toDir, names, filter = () => true) {
+  const safeNames = [...new Set(Array.isArray(names) ? names : [])].filter(name => name && filter(name));
+  if (!safeNames.length) return 0;
+  try { await fs.promises.mkdir(toDir, { recursive: true }); } catch { return 0; }
+  let copied = 0;
+  await runWithConcurrency(safeNames, SYNC_ASSET_COPY_CONCURRENCY, async name => {
+    const safeName = path.basename(String(name));
+    if (!safeName || safeName !== name || !filter(safeName)) return;
+    const source = path.join(fromDir, safeName);
+    const dest = path.join(toDir, safeName);
     try {
-      const stats = await fs.promises.stat(source);
-      if (!stats.isFile()) continue;
       try {
         await fs.promises.access(dest, fs.constants.F_OK);
-      } catch {
-        await fs.promises.copyFile(source, dest);
-      }
+        return;
+      } catch {}
+      const stats = await fs.promises.stat(source);
+      if (!stats.isFile()) return;
+      await fs.promises.copyFile(source, dest);
+      copied++;
     } catch {}
-  }
+  });
+  return copied;
 }
 
-async function syncMissingFilesAsync(localDir, remoteDir, filter) {
-  await copyMissingFilesAsync(remoteDir, localDir, filter);
-  await copyMissingFilesAsync(localDir, remoteDir, filter);
-}
-
-async function syncRemoteAssets(remoteImgDir, remoteTextDir) {
+async function syncRemoteAssets(remoteImgDir, remoteTextDir, { pullHistory = [], pushHistory = [] } = {}) {
+  const pullImages = historyImageNames(pullHistory);
+  const pullTexts = historyTextRefs(pullHistory);
+  const pushImages = historyImageNames(pushHistory);
+  const pushTexts = historyTextRefs(pushHistory);
   await Promise.all([
-    syncMissingFilesAsync(IMG_DIR, remoteImgDir),
-    syncMissingFilesAsync(TEXT_DIR, remoteTextDir, name => !!textBlobStore.safeTextRef(name)),
+    copyNamedFilesAsync(remoteImgDir, IMG_DIR, pullImages, name => !!safeImageName(name)),
+    copyNamedFilesAsync(remoteTextDir, TEXT_DIR, pullTexts, name => !!textBlobStore.safeTextRef(name)),
+    copyNamedFilesAsync(IMG_DIR, remoteImgDir, pushImages, name => !!safeImageName(name)),
+    copyNamedFilesAsync(TEXT_DIR, remoteTextDir, pushTexts, name => !!textBlobStore.safeTextRef(name)),
   ]);
 }
 
@@ -1045,10 +1052,15 @@ async function updateSyncProviderCache(syncPath) {
 async function readRemoteState(syncPath) {
   const remoteDbPath = path.join(syncPath, 'clipboard-history.json');
   const remoteSettingsPath = path.join(syncPath, 'clipboard-settings.json');
+  const remoteImgDir = path.join(syncPath, 'clipboard-images');
+  const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
   let remoteHistory = [];
   try {
     const loaded = JSON.parse(await fs.promises.readFile(remoteDbPath, 'utf-8'));
-    if (Array.isArray(loaded)) remoteHistory = textBlobStore.hydrateHistory(loaded, TEXT_DIR);
+    if (Array.isArray(loaded)) {
+      await syncRemoteAssets(remoteImgDir, remoteTextDir, { pullHistory: loaded });
+      remoteHistory = textBlobStore.hydrateHistory(loaded, TEXT_DIR);
+    }
   } catch {}
   let remoteSettings = {};
   try { remoteSettings = JSON.parse(await fs.promises.readFile(remoteSettingsPath, 'utf-8')); } catch {}
@@ -1133,18 +1145,25 @@ async function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   const remoteSettingsPath = path.join(syncPath, 'clipboard-settings.json');
   const remoteImgDir = path.join(syncPath, 'clipboard-images');
   const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
-  const nextHistoryJson = JSON.stringify(textBlobStore.prepareHistoryForStorage(canonicalHistory, TEXT_DIR));
+  const storedHistory = textBlobStore.prepareHistoryForStorage(canonicalHistory, TEXT_DIR);
+  const nextHistoryJson = JSON.stringify(storedHistory);
   const nextSettingsJson = JSON.stringify(canonicalSettings, null, 2);
   const [currentHistoryJson, currentSettingsJson] = await Promise.all([
     readFileUtf8IfExists(remoteDbPath),
     readFileUtf8IfExists(remoteSettingsPath),
   ]);
+  let currentStoredHistory = null;
+  try {
+    const parsed = currentHistoryJson ? JSON.parse(currentHistoryJson) : null;
+    if (Array.isArray(parsed)) currentStoredHistory = parsed;
+  } catch {}
+  const pushHistory = historyAssetDelta(storedHistory, currentStoredHistory);
   const wroteHistory = currentHistoryJson !== nextHistoryJson;
   const wroteSettings = currentSettingsJson !== nextSettingsJson;
   await Promise.all([
     wroteHistory ? atomicWriteFileAsync(remoteDbPath, nextHistoryJson) : Promise.resolve(),
     wroteSettings ? atomicWriteFileAsync(remoteSettingsPath, nextSettingsJson) : Promise.resolve(),
-    syncRemoteAssets(remoteImgDir, remoteTextDir),
+    syncRemoteAssets(remoteImgDir, remoteTextDir, { pushHistory }),
   ]);
   await updateSyncProviderCache(syncPath);
   diagnostics.slow('sync.write_remote.slow', Date.now() - startedAt, {
@@ -1152,6 +1171,7 @@ async function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
     items: canonicalHistory.length,
     history_bytes: Buffer.byteLength(nextHistoryJson),
     settings_bytes: Buffer.byteLength(nextSettingsJson),
+    assets_to_push: pushHistory.length,
     wrote_history: wroteHistory,
     wrote_settings: wroteSettings,
   }, 150);
@@ -1211,7 +1231,7 @@ function p2pHistoryStorage() {
   return textBlobStore.prepareHistoryForStorage(history, TEXT_DIR);
 }
 
-function p2pTextRefsFromHistory(items) {
+function historyTextRefs(items) {
   const refs = new Set();
   for (const item of Array.isArray(items) ? items : []) {
     const ref = textBlobStore.safeTextRef(item && item.textRef);
@@ -1220,7 +1240,7 @@ function p2pTextRefsFromHistory(items) {
   return [...refs];
 }
 
-function p2pImageNamesFromHistory(items) {
+function historyImageNames(items) {
   const names = new Set();
   for (const item of Array.isArray(items) ? items : []) {
     if (!item || item.type !== 'image') continue;
@@ -1228,6 +1248,21 @@ function p2pImageNamesFromHistory(items) {
     if (name) names.add(name);
   }
   return [...names];
+}
+
+function historyAssetDelta(nextHistory, currentHistory) {
+  if (!Array.isArray(currentHistory)) return Array.isArray(nextHistory) ? nextHistory : [];
+  const currentImages = new Set(historyImageNames(currentHistory));
+  const currentTexts = new Set(historyTextRefs(currentHistory));
+  return (Array.isArray(nextHistory) ? nextHistory : []).filter(item => {
+    if (!item) return false;
+    if (item.type === 'image') {
+      const name = safeImageName(item.image);
+      return !!name && !currentImages.has(name);
+    }
+    const ref = textBlobStore.safeTextRef(item.textRef);
+    return !!ref && !currentTexts.has(ref);
+  });
 }
 
 function p2pStatePayload() {
@@ -1240,8 +1275,8 @@ function p2pStatePayload() {
     revision: p2p.revision,
     history: storedHistory,
     settings: remoteSettingsPayload(),
-    images: p2pImageNamesFromHistory(storedHistory),
-    texts: p2pTextRefsFromHistory(storedHistory),
+    images: historyImageNames(storedHistory),
+    texts: historyTextRefs(storedHistory),
   };
 }
 
@@ -1679,49 +1714,68 @@ async function syncMerge(options = {}) {
 
     for (const syncPath of syncPaths) {
       const providerStartedAt = Date.now();
-      const signature = await syncProviderSignature(syncPath);
-      const signatureKey = syncProviderSignatureKey(signature);
-      const cached = syncProviderCache.get(syncPath);
-      const remoteChanged = !cached || cached.signatureKey !== signatureKey;
-      const shouldReadRemote = fullSync || remoteChanged;
-      if (!shouldReadRemote && !hadLocalDirty) {
+      try {
+        const providerResult = await withTimeout((async () => {
+          const signature = await syncProviderSignature(syncPath);
+          const signatureKey = syncProviderSignatureKey(signature);
+          const cached = syncProviderCache.get(syncPath);
+          const remoteChanged = !cached || cached.signatureKey !== signatureKey;
+          const shouldReadRemote = fullSync || remoteChanged;
+          if (!shouldReadRemote && !hadLocalDirty) {
+            return {
+              path: syncPath,
+              skipped: true,
+              remote_changed: false,
+              full_sync: false,
+              ms: Date.now() - providerStartedAt,
+            };
+          }
+
+          if (!shouldReadRemote) {
+            return {
+              path: syncPath,
+              skipped: true,
+              remote_changed: false,
+              local_dirty: hadLocalDirty,
+              full_sync: false,
+              ms: Date.now() - providerStartedAt,
+            };
+          }
+
+          const { remoteHistory, remoteSettings } = await readRemoteState(syncPath);
+          await updateSyncProviderCache(syncPath);
+          return {
+            path: syncPath,
+            skipped: false,
+            remote_changed: remoteChanged,
+            full_sync: fullSync,
+            remote_items: remoteHistory.length,
+            remote_history: remoteHistory,
+            remote_settings: remoteSettings,
+            ms: Date.now() - providerStartedAt,
+          };
+        })(), SYNC_PROVIDER_READ_TIMEOUT_MS, `read ${syncPath}`);
+
+        if (!providerResult.skipped) {
+          canonicalHistory = foldRemoteState(canonicalHistory, providerResult.remote_history, providerResult.remote_settings);
+          providerResult.canonical_items = canonicalHistory.length;
+          delete providerResult.remote_history;
+          delete providerResult.remote_settings;
+        }
+        providers.push(providerResult);
+      } catch (error) {
         providers.push({
           path: syncPath,
           skipped: true,
-          remote_changed: false,
-          full_sync: false,
+          error: error && error.message,
+          timed_out: error && /timed out/.test(error.message),
           ms: Date.now() - providerStartedAt,
         });
-        continue;
-      }
-
-      if (!shouldReadRemote) {
-        providers.push({
+        diagnostics.record('sync.provider_read.error', {
           path: syncPath,
-          skipped: true,
-          remote_changed: false,
-          local_dirty: hadLocalDirty,
-          full_sync: false,
-          ms: Date.now() - providerStartedAt,
-        });
-        continue;
+          error: error && error.message,
+        }, { forceFile: true });
       }
-
-      const remoteTextDir = path.join(syncPath, textBlobStore.TEXT_BLOB_DIRNAME);
-      const remoteImgDir = path.join(syncPath, 'clipboard-images');
-      await syncRemoteAssets(remoteImgDir, remoteTextDir);
-      const { remoteHistory, remoteSettings } = await readRemoteState(syncPath);
-      canonicalHistory = foldRemoteState(canonicalHistory, remoteHistory, remoteSettings);
-      await updateSyncProviderCache(syncPath);
-      providers.push({
-        path: syncPath,
-        skipped: false,
-        remote_changed: remoteChanged,
-        full_sync: fullSync,
-        remote_items: remoteHistory.length,
-        canonical_items: canonicalHistory.length,
-        ms: Date.now() - providerStartedAt,
-      });
     }
 
     if (syncDirtyVersion !== startedDirtyVersion || dataRevision !== startedDataRevision) {
@@ -1755,20 +1809,18 @@ async function syncMerge(options = {}) {
     shouldWriteRemotes = hadLocalDirty || localChanged || settingsChanged;
     const canonicalSettings = remoteSettingsPayload();
     if (shouldWriteRemotes) {
-      for (const syncPath of syncPaths) {
-        try {
-          await withTimeout(
+      await Promise.all(syncPaths.map(syncPath => (
+        withTimeout(
             writeRemoteState(syncPath, history, canonicalSettings),
             SYNC_REMOTE_WRITE_TIMEOUT_MS,
             `write ${syncPath}`
-          );
-        } catch (error) {
+        ).catch(error => {
           diagnostics.record('sync.write_remote.error', {
             path: syncPath,
             error: error && error.message,
           }, { forceFile: true });
-        }
-      }
+        })
+      )));
     }
     if (fullSync) lastFullSyncAt = Date.now();
     syncSucceeded = true;
