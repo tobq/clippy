@@ -49,8 +49,15 @@ const DB_PATH = path.join(DATA_DIR, 'clipboard-history.json');
 const SETTINGS_PATH = path.join(DATA_DIR, 'clipboard-settings.json');
 const IMG_DIR = path.join(DATA_DIR, 'clipboard-images');
 const TEXT_DIR = path.join(DATA_DIR, textBlobStore.TEXT_BLOB_DIRNAME);
+const HISTORY_BACKUP_DIR = path.join(DATA_DIR, 'clipboard-backups');
 const APP_ICON_PATH = path.join(SCRIPT_DIR, 'icon.png');
 const DIAGNOSTICS_PATH = path.join(DATA_DIR, 'boardclip-diagnostics.jsonl');
+const HISTORY_BACKUP_MAX_FILES = 100;
+const HISTORY_BACKUP_MIN_INTERVAL_MS = 60 * 1000;
+const IMAGE_ORPHAN_RECOVERY_WINDOW_MS = 30 * 60 * 1000;
+const IMAGE_ORPHAN_RECOVERY_MAX_FILES = 20;
+const SYNC_REMOTE_WRITE_TIMEOUT_MS = 8000;
+const CONTENT_IMAGE_RE = /^([a-f0-9]{12})(?: \(\d+\))?\.png$/i;
 
 function windowsStartupDir() {
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
@@ -154,6 +161,7 @@ const AHK_PRESETS = {
   8: "here's where we left off before our conversation got condensed:\n===================\n\n===================",
   9: "We AGGRESSIVELY should try to minimise code/logic duplication and maximise/unify/reuse shared components across projects.\nOften it's better to adapt existing components, further strengthening them as opposed to creating new variants which will likely lead to duplicated effort down the line.\nWe can still have inheritance/composition - doesn't have to be everything in 1 monster function/class, but the core logic should be shared/reused.\nThis must be taken into account at every step of thinking/planning.\nThis reduces maintenance cost and chance of bugs, and makes it easier to understand and adapt code in future",
 };
+const DEFAULT_PRESET_SEED_AT_MS = 1;
 
 // --- Settings ---
 const DEFAULT_SETTINGS = clipboardModel.DEFAULT_SETTINGS;
@@ -164,6 +172,91 @@ function atomicWriteFile(filePath, data) {
 
 function atomicWriteJson(filePath, value, spacing) {
   atomicWriteFile(filePath, JSON.stringify(value, null, spacing));
+}
+
+let lastHistoryBackupAt = 0;
+let lastHistoryBackupHash = '';
+
+function historyContentHash(historyJson, settingsJson = '') {
+  return crypto.createHash('sha256').update(historyJson).update('\0').update(settingsJson || '').digest('hex');
+}
+
+function slotFingerprintFromItems(items) {
+  const slots = {};
+  for (const item of Array.isArray(items) ? items : []) {
+    const slot = numpadSlotOf(item);
+    if (slot != null) slots[slot] = itemKey(item);
+  }
+  return JSON.stringify(slots);
+}
+
+function pruneHistoryBackups() {
+  let files = [];
+  try {
+    files = fs.readdirSync(HISTORY_BACKUP_DIR)
+      .filter(name => name.endsWith('.json'))
+      .map(name => {
+        const filePath = path.join(HISTORY_BACKUP_DIR, name);
+        try { return { name, filePath, mtimeMs: fs.statSync(filePath).mtimeMs }; } catch { return null; }
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  } catch { return; }
+
+  for (const file of files.slice(HISTORY_BACKUP_MAX_FILES)) {
+    try { fs.rmSync(file.filePath, { force: true }); } catch {}
+  }
+}
+
+function maybeBackupHistoryBeforeWrite(nextStoredHistory) {
+  let currentHistoryJson = '';
+  try { currentHistoryJson = fs.readFileSync(DB_PATH, 'utf-8'); } catch { return; }
+  if (!currentHistoryJson) return;
+
+  let currentSettingsJson = '';
+  try { currentSettingsJson = fs.readFileSync(SETTINGS_PATH, 'utf-8'); } catch {}
+
+  const contentHash = historyContentHash(currentHistoryJson, currentSettingsJson);
+  if (contentHash === lastHistoryBackupHash) return;
+
+  let currentHistory = [];
+  try {
+    const parsed = JSON.parse(currentHistoryJson);
+    currentHistory = Array.isArray(parsed) ? parsed : [];
+  } catch { return; }
+
+  const currentSlots = slotFingerprintFromItems(currentHistory);
+  const nextSlots = slotFingerprintFromItems(nextStoredHistory);
+  const slotChanged = currentSlots !== nextSlots;
+  const now = Date.now();
+  if (!slotChanged && now - lastHistoryBackupAt < HISTORY_BACKUP_MIN_INTERVAL_MS) return;
+
+  let currentSettings = null;
+  try { currentSettings = currentSettingsJson ? JSON.parse(currentSettingsJson) : null; } catch {}
+
+  const reason = slotChanged ? 'slots' : 'periodic';
+  const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(HISTORY_BACKUP_DIR, `${stamp}-${reason}-${contentHash.slice(0, 12)}.json`);
+  try {
+    fs.mkdirSync(HISTORY_BACKUP_DIR, { recursive: true });
+    atomicWriteJson(backupPath, {
+      createdAt: new Date(now).toISOString(),
+      reason,
+      source: {
+        historyPath: DB_PATH,
+        settingsPath: SETTINGS_PATH,
+        historyHash: contentHash,
+        slotChanged,
+        currentSlots,
+        nextSlots,
+      },
+      history: currentHistory,
+      settings: currentSettings,
+    });
+    lastHistoryBackupAt = now;
+    lastHistoryBackupHash = contentHash;
+    pruneHistoryBackups();
+  } catch {}
 }
 
 async function atomicWriteFileAsync(filePath, data) {
@@ -255,8 +348,17 @@ function defaultShowShortcut() {
   return process.platform === 'win32' ? 'Super+V' : DEFAULT_SHOW_SHORTCUT;
 }
 
+function defaultQuickPasteShortcut() {
+  if (process.platform === 'darwin') return 'Command+Option+1';
+  return '';
+}
+
 function effectiveShowShortcut() {
   return settings.show_shortcut || defaultShowShortcut();
+}
+
+function effectiveQuickPasteShortcut() {
+  return settings.quick_paste_shortcut || defaultQuickPasteShortcut();
 }
 
 function globalShowShortcut() {
@@ -264,10 +366,22 @@ function globalShowShortcut() {
   return settings.show_shortcut || (process.platform === 'win32' ? '' : DEFAULT_SHOW_SHORTCUT);
 }
 
+function globalQuickPasteShortcut() {
+  const shortcut = effectiveQuickPasteShortcut();
+  if (shortcutUsesFn(shortcut)) return '';
+  return shortcut;
+}
+
 function normalizeShowShortcut(shortcut) {
   const value = String(shortcut || '').trim();
   if (process.platform === 'win32' && value === defaultShowShortcut()) return '';
   if (process.platform !== 'win32' && value === DEFAULT_SHOW_SHORTCUT) return '';
+  return value;
+}
+
+function normalizeQuickPasteShortcut(shortcut) {
+  const value = String(shortcut || '').trim();
+  if (!value || value === defaultQuickPasteShortcut()) return '';
   return value;
 }
 
@@ -288,6 +402,22 @@ function shortcutHasKeyAndModifier(shortcut) {
   const allModifiers = new Set([...primaryModifiers, 'shift']);
   return parts.some(part => primaryModifiers.has(part.toLowerCase())) &&
          parts.some(part => !allModifiers.has(part.toLowerCase()));
+}
+
+function quickPasteSlotFromShortcut(shortcut) {
+  const parts = String(shortcut || '').split('+').map(p => p.trim()).filter(Boolean);
+  const key = parts[parts.length - 1] || '';
+  const match = /^(?:num)?([1-9])$/i.exec(key);
+  return match ? Number(match[1]) : null;
+}
+
+function quickPasteShortcutForSlot(shortcut, slot) {
+  const parts = String(shortcut || '').split('+').map(p => p.trim()).filter(Boolean);
+  if (!parts.length) return '';
+  const keyIndex = parts.length - 1;
+  if (quickPasteSlotFromShortcut(parts[keyIndex]) == null) return '';
+  parts[keyIndex] = String(slot);
+  return parts.join('+');
 }
 
 function normalizeSyncPath(syncPath) {
@@ -317,7 +447,9 @@ function loadHistory() {
 
 function writeHistoryStorageFile() {
   for (const item of history) ensureItemId(item);
-  atomicWriteJson(DB_PATH, textBlobStore.prepareHistoryForStorage(history, TEXT_DIR));
+  const storedHistory = textBlobStore.prepareHistoryForStorage(history, TEXT_DIR);
+  maybeBackupHistoryBeforeWrite(storedHistory);
+  atomicWriteJson(DB_PATH, storedHistory);
 }
 
 function saveHistory() {
@@ -408,9 +540,11 @@ function clonePin(pin) {
 function updateTextItem(item, text) {
   if (!item || item.type === 'image') return null;
   const oldId = itemKey(item);
-  const next = { ...item, text: text || '', updatedAt: Date.now() };
+  const now = Date.now();
+  const next = { ...item, text: text || '', updatedAt: now };
   textBlobStore.setInlineText(next, text);
   next.id = legacyContentKey(next);
+  if (numpadSlotOf(next) != null) touchPinNumber(next, now);
 
   const existingIdx = history.findIndex(h => h !== item && itemKey(h) === next.id);
   if (existingIdx >= 0) {
@@ -431,6 +565,7 @@ function updateTextItem(item, text) {
   textBlobStore.setInlineText(item, next.text);
   item.id = next.id;
   item.updatedAt = next.updatedAt;
+  if (numpadSlotOf(item) != null) touchPinNumber(item, now);
   if (oldId !== item.id) addTombstone(oldId);
   return item;
 }
@@ -494,36 +629,15 @@ function migrateNumpad() {
   const oldSlots = settings.numpad_slots;
 
   if (oldSlots) {
-    for (const [numStr, slot] of Object.entries(oldSlots)) {
-      const num = parseInt(numStr);
-      const now = Date.now();
-      if (slot.type === 'image') {
-        const match = history.find(h => h.type === 'image' && h.image === slot.image);
-        if (match) {
-          ensurePin(match).number = num;
-          touchPinNumber(match, now);
-        } else {
-          history.unshift({ type: 'image', image: slot.image, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
-        }
-      } else {
-        const text = slot.text || '';
-        const match = history.find(h => h.type !== 'image' && h.text === text);
-        if (match) {
-          ensurePin(match).number = num;
-          touchPinNumber(match, now);
-        } else {
-          history.unshift({ type: 'text', text, ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
-        }
-      }
-    }
+    const result = clipboardModel.migrateLegacyNumpadSlots(history, oldSlots, { now: Date.now() });
     delete settings.numpad_slots;
-    saveHistory();
+    if (result.changed) saveHistory();
     saveSettingsFile();
   } else if (!history.length) {
     for (const num of [9, 8, 7, 6, 5, 4, 3, 2, 1]) {
       if (AHK_PRESETS[num]) {
-        const now = Date.now();
-        history.unshift({ type: 'text', text: AHK_PRESETS[num], ts: now / 1000, updatedAt: now, pinUpdatedAt: now, pin: { number: num, updatedAt: now, numberUpdatedAt: now } });
+        const seededAt = DEFAULT_PRESET_SEED_AT_MS;
+        history.unshift({ type: 'text', text: AHK_PRESETS[num], ts: seededAt / 1000, updatedAt: seededAt, pinUpdatedAt: seededAt, pin: { number: num, updatedAt: seededAt, numberUpdatedAt: seededAt } });
       }
     }
     saveHistory();
@@ -541,6 +655,10 @@ function normalizeGroupTombstones(list) {
 
 function groupTombstoneNames(list) {
   return clipboardModel.groupTombstoneNames(list);
+}
+
+function tombstoneIds(list) {
+  return clipboardModel.tombstoneIds(list);
 }
 
 function addTombstone(id) {
@@ -603,6 +721,7 @@ function remoteSettingsPayload() {
   delete remoteSave.sync_custom_paths;
   delete remoteSave.sync_disabled_paths;
   delete remoteSave.show_shortcut;
+  delete remoteSave.quick_paste_shortcut;
   return remoteSave;
 }
 
@@ -697,6 +816,88 @@ async function syncRemoteAssets(remoteImgDir, remoteTextDir) {
   ]);
 }
 
+function pngSizeFromBuffer(buf) {
+  if (
+    !Buffer.isBuffer(buf) ||
+    buf.length < 24 ||
+    buf[0] !== 0x89 ||
+    buf[1] !== 0x50 ||
+    buf[2] !== 0x4e ||
+    buf[3] !== 0x47 ||
+    buf[12] !== 0x49 ||
+    buf[13] !== 0x48 ||
+    buf[14] !== 0x44 ||
+    buf[15] !== 0x52
+  ) {
+    return null;
+  }
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+
+async function canonicalizeRecoveredImage(name) {
+  const match = CONTENT_IMAGE_RE.exec(name || '');
+  if (!match) return null;
+  const hash = match[1].toLowerCase();
+  const canonical = `${hash}.png`;
+  const source = path.join(IMG_DIR, name);
+  const target = path.join(IMG_DIR, canonical);
+  if (name !== canonical) {
+    try {
+      await fs.promises.access(target, fs.constants.F_OK);
+    } catch {
+      try { await fs.promises.copyFile(source, target); } catch { return null; }
+    }
+  }
+  return canonical;
+}
+
+async function recoverRecentOrphanImages(items) {
+  const now = Date.now();
+  let names = [];
+  try { names = await fs.promises.readdir(IMG_DIR); } catch { return 0; }
+  const known = new Set((Array.isArray(items) ? items : [])
+    .filter(item => item && item.type === 'image' && item.image)
+    .map(item => item.image));
+  const deleted = tombstoneIds(settings.tombstones);
+  const candidates = [];
+
+  for (const name of names) {
+    const canonical = await canonicalizeRecoveredImage(name);
+    if (!canonical || known.has(canonical) || deleted.has(`img:${canonical}`)) continue;
+    try {
+      const stats = await fs.promises.stat(path.join(IMG_DIR, canonical));
+      if (!stats.isFile() || now - stats.mtimeMs > IMAGE_ORPHAN_RECOVERY_WINDOW_MS) continue;
+      candidates.push({ canonical, mtimeMs: stats.mtimeMs });
+    } catch {}
+  }
+
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  let recovered = 0;
+  for (const candidate of candidates.slice(0, IMAGE_ORPHAN_RECOVERY_MAX_FILES)) {
+    try {
+      const header = await fs.promises.readFile(path.join(IMG_DIR, candidate.canonical), { start: 0, end: 31 });
+      const size = pngSizeFromBuffer(header) || { width: 0, height: 0 };
+      const item = {
+        type: 'image',
+        image: candidate.canonical,
+        ts: candidate.mtimeMs / 1000,
+        width: size.width,
+        height: size.height,
+        id: `img:${candidate.canonical}`,
+        pin: null,
+      };
+      items.unshift(item);
+      known.add(candidate.canonical);
+      recovered++;
+    } catch {}
+  }
+  if (recovered) {
+    items.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    diagnostics.record('sync.recover_orphan_images', { recovered, items: items.length });
+  }
+  return recovered;
+}
+
 let syncDebounceTimer = null;
 let insideSync = false;
 let applyingSyncState = false;
@@ -704,6 +905,8 @@ let syncDirtyVersion = 0;
 let syncedDirtyVersion = 0;
 let syncPending = false;
 let syncPendingForce = false;
+let lastSyncResult = null;
+const syncIdleWaiters = [];
 let lastFullSyncAt = 0;
 const SYNC_FULL_INTERVAL_MS = 5 * 60 * 1000;
 const syncProviderCache = new Map();
@@ -728,19 +931,41 @@ async function fileSignature(filePath) {
   }
 }
 
+async function directorySignature(dirPath) {
+  try {
+    const stats = await fs.promises.stat(dirPath);
+    return { exists: true, mtimeMs: Math.round(stats.mtimeMs) };
+  } catch {
+    return { exists: false, mtimeMs: 0 };
+  }
+}
+
 async function syncProviderSignature(syncPath) {
-  const [history, settingsFile] = await Promise.all([
+  const [history, settingsFile, images] = await Promise.all([
     fileSignature(path.join(syncPath, 'clipboard-history.json')),
     fileSignature(path.join(syncPath, 'clipboard-settings.json')),
+    directorySignature(path.join(syncPath, 'clipboard-images')),
   ]);
   return {
     history,
     settings: settingsFile,
+    images,
   };
 }
 
 function syncProviderSignatureKey(signature) {
   return JSON.stringify(signature);
+}
+
+function waitForSyncIdle() {
+  if (!insideSync && !syncPending) return Promise.resolve(lastSyncResult);
+  return new Promise(resolve => syncIdleWaiters.push(resolve));
+}
+
+function resolveSyncIdle(result) {
+  if (insideSync || syncPending || !syncIdleWaiters.length) return;
+  const waiters = syncIdleWaiters.splice(0);
+  for (const resolve of waiters) resolve(result);
 }
 
 async function updateSyncProviderCache(syncPath) {
@@ -866,14 +1091,27 @@ async function writeRemoteState(syncPath, canonicalHistory, canonicalSettings) {
   }, 150);
 }
 
+function withTimeout(promise, ms, label) {
+  let timer = null;
+  return Promise.race([
+    promise.finally(() => {
+      if (timer) clearTimeout(timer);
+    }),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      if (timer.unref) timer.unref();
+    }),
+  ]);
+}
+
 async function syncMerge(options = {}) {
   if (insideSync) {
     if (options && options.force) {
       syncPending = true;
       syncPendingForce = true;
     }
-    diagnostics.record('sync.skip_inside_sync', { items: history.length });
-    return;
+    diagnostics.record('sync.skip_inside_sync', { items: history.length }, { forceFile: true });
+    return options && options.force ? waitForSyncIdle() : lastSyncResult;
   }
   insideSync = true;
   const startedAt = Date.now();
@@ -886,15 +1124,28 @@ async function syncMerge(options = {}) {
   let settingsChanged = false;
   let shouldWriteRemotes = false;
   let syncSucceeded = false;
+  let recoveredImages = 0;
+  let result = null;
   const providers = [];
   try {
     syncPaths = await getEnabledSyncPaths();
     if (!syncPaths.length) {
       syncSucceeded = true;
-      return;
+      result = {
+        ok: true,
+        paths: [],
+        providers: [],
+        local_changed: false,
+        settings_changed: false,
+        local_dirty: hadLocalDirty,
+        full_sync: fullSync,
+        wrote_remotes: false,
+        items: history.length,
+      };
+      return result;
     }
 
-    let canonicalHistory = history;
+    let canonicalHistory = history.slice();
     const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
 
     for (const syncPath of syncPaths) {
@@ -954,6 +1205,7 @@ async function syncMerge(options = {}) {
       });
     }
 
+    recoveredImages = await recoverRecentOrphanImages(canonicalHistory);
     localChanged = JSON.stringify(canonicalHistory) !== JSON.stringify(history);
     settingsChanged = JSON.stringify(remoteSettingsPayload()) !== previousSettingsJson;
     if (localChanged) {
@@ -974,13 +1226,58 @@ async function syncMerge(options = {}) {
     const canonicalSettings = remoteSettingsPayload();
     if (shouldWriteRemotes) {
       for (const syncPath of syncPaths) {
-        try { await writeRemoteState(syncPath, history, canonicalSettings); } catch {}
+        try {
+          await withTimeout(
+            writeRemoteState(syncPath, history, canonicalSettings),
+            SYNC_REMOTE_WRITE_TIMEOUT_MS,
+            `write ${syncPath}`
+          );
+        } catch (error) {
+          diagnostics.record('sync.write_remote.error', {
+            path: syncPath,
+            error: error && error.message,
+          }, { forceFile: true });
+        }
       }
     }
     if (fullSync) lastFullSyncAt = Date.now();
     syncSucceeded = true;
+    result = {
+      ok: true,
+      paths: syncPaths,
+      providers,
+      local_changed: localChanged,
+      settings_changed: settingsChanged,
+      local_dirty: hadLocalDirty,
+      full_sync: fullSync,
+      recovered_images: recoveredImages,
+      wrote_remotes: shouldWriteRemotes,
+      items: history.length,
+    };
+    return result;
+  } catch (error) {
+    diagnostics.record('sync.error', {
+      error: error && error.message,
+      stack: error && error.stack,
+    }, { forceFile: true });
   } finally {
     const elapsed = Date.now() - startedAt;
+    if (!result) {
+      result = {
+        ok: syncSucceeded,
+        paths: syncPaths,
+        providers,
+        local_changed: localChanged,
+        settings_changed: settingsChanged,
+        local_dirty: hadLocalDirty,
+        full_sync: fullSync,
+        recovered_images: recoveredImages,
+        wrote_remotes: shouldWriteRemotes,
+        items: history.length,
+      };
+    }
+    result.ms = elapsed;
+    lastSyncResult = result;
     if (syncPaths.length || elapsed > 50 || diagnostics.isEnabled()) {
       diagnostics.record('sync.merge', {
         ms: elapsed,
@@ -990,6 +1287,7 @@ async function syncMerge(options = {}) {
         settings_changed: settingsChanged,
         local_dirty: hadLocalDirty,
         full_sync: fullSync,
+        recovered_images: recoveredImages,
         wrote_remotes: shouldWriteRemotes,
         items: history.length,
         provider_timings: providers,
@@ -1006,6 +1304,8 @@ async function syncMerge(options = {}) {
       syncPendingForce = false;
       const timer = setTimeout(() => syncMerge({ force: pendingForce }), 0);
       if (timer.unref) timer.unref();
+    } else {
+      resolveSyncIdle(result);
     }
   }
 }
@@ -1180,45 +1480,112 @@ function restoreClipboard(backup) {
   }
 }
 
+function escapeAppleScriptString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function getFrontmostMacAppName() {
+  if (process.platform !== 'darwin') return Promise.resolve('');
+  return new Promise(resolve => {
+    exec(`osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'`, (error, stdout) => {
+      resolve(error ? '' : String(stdout || '').trim());
+    });
+  });
+}
+
+function macWindowSnapshot() {
+  if (!win || win.isDestroyed()) return { exists: false };
+  return {
+    exists: true,
+    visible: win.isVisible(),
+    focused: win.isFocused(),
+    minimized: win.isMinimized(),
+    bounds: win.getBounds(),
+  };
+}
+
+let quickPasteTraceSeq = 0;
+
 // --- Paste simulation ---
 // Sends Ctrl+V (Cmd+V on mac) to the currently focused window. On Windows
 // this uses a direct keybd_event call via koffi (microseconds, no side
 // effects). On macOS we use osascript because there's no equivalent native
 // Electron API — acceptable there because the Mac paste flow is less hot.
-function simulatePaste() {
+function simulatePaste(targetAppName = '') {
   if (process.platform === 'win32') {
     winPaste.sendCtrlV();
     return Promise.resolve();
   }
   return new Promise((resolve) => {
-    exec(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`, () => resolve());
+    const target = escapeAppleScriptString(targetAppName);
+    const activateTarget = target
+      ? `try\n            tell application "${target}" to activate\n            delay 0.05\n          end try`
+      : '';
+    exec(`osascript -e '
+      tell application "System Events"
+        ${activateTarget}
+        keystroke "v" using command down
+      end tell'`, (error) => resolve({ ok: !error, error: error && error.message }));
   });
 }
 
 // --- Numpad quick-paste ---
-async function numpadPaste(slotNum) {
+async function numpadPaste(slotNum, options = {}) {
+  const trace = options.trace || {};
   // Drop the call if a previous paste is still in its restore window —
   // otherwise rapid Num-key presses race and the second call's "backup"
   // captures the first call's pasted content.
-  if (!pollGate) return;
+  if (!pollGate) {
+    diagnostics.record('shortcut.quick_paste_blocked', { ...trace, slot: slotNum, reason: 'poll_gate' }, { forceFile: true });
+    return;
+  }
   const item = history.find(h => hasNumpadSlot(h, slotNum));
-  if (!item) return;
+  if (!item) {
+    diagnostics.record('shortcut.quick_paste_missing_slot', { ...trace, slot: slotNum }, { forceFile: true });
+    return;
+  }
 
   pollGate = false;
   let backup = null;
   try {
     backup = backupClipboard();
     setClipboardToItem(item);
+    diagnostics.record('shortcut.quick_paste_clipboard_set', {
+      ...trace,
+      slot: slotNum,
+      item_id: itemKey(item),
+      item_type: item.type || 'text',
+      text_len: item.type === 'image' ? undefined : String(item.text || '').length,
+      backup_text_len: backup && backup.text ? backup.text.length : 0,
+      window: macWindowSnapshot(),
+    }, { forceFile: true });
   // Minimum delay for Windows clipboard propagation before paste. 15ms is
   // tight but reliable — clipboard.writeText is synchronous and Windows
   // WM_CLIPBOARDUPDATE propagates within a few ms on any modern system.
     await new Promise(r => setTimeout(r, 15));
-    await simulatePaste();
+    const pasteResult = await simulatePaste(options.targetAppName || '');
+    const frontmostAfterPaste = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+    diagnostics.record('shortcut.quick_paste_pasted', {
+      ...trace,
+      slot: slotNum,
+      target_app: options.targetAppName || '',
+      frontmost_after_paste: frontmostAfterPaste,
+      paste_ok: !pasteResult || pasteResult.ok !== false,
+      paste_error: pasteResult && pasteResult.error,
+      window: macWindowSnapshot(),
+    }, { forceFile: true });
     await new Promise(r => setTimeout(r, 150));
   // Fire-and-forget restore: the target app needs ~100-150ms to read from
   // the clipboard after receiving Ctrl+V. We don't block the caller on that.
   } finally {
     try { restoreClipboard(backup); } catch {}
+    const frontmostAfterRestore = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+    diagnostics.record('shortcut.quick_paste_restored', {
+      ...trace,
+      slot: slotNum,
+      frontmost_after_restore: frontmostAfterRestore,
+      window: macWindowSnapshot(),
+    }, { forceFile: true });
     pollGate = true;
   }
 }
@@ -1582,6 +1949,9 @@ function setupIPC() {
       show: effectiveShowShortcut(),
       custom: !!settings.show_shortcut,
       default: defaultShowShortcut(),
+      quickPaste: effectiveQuickPasteShortcut(),
+      quickPasteCustom: !!settings.quick_paste_shortcut,
+      quickPasteDefault: defaultQuickPasteShortcut(),
       windows_hook: process.platform === 'win32',
     },
   }));
@@ -1681,6 +2051,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('set-show-shortcut', (_, shortcut) => setShowShortcut(shortcut));
+  ipcMain.handle('set-quick-paste-shortcut', (_, shortcut) => setQuickPasteShortcut(shortcut));
   ipcMain.handle('resolve-show-shortcut', (_, shortcut) => {
     const hook = getMacosHotkey();
     return hook ? hook.resolveShortcutFromCurrentModifiers(shortcut) : shortcut;
@@ -1799,7 +2170,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('sync-now', async () => {
-    await syncMerge({ force: true });
+    return syncMerge({ force: true });
   });
 
   ipcMain.handle('check-for-updates', async () => {
@@ -1845,6 +2216,25 @@ function handleNumpad(slot) {
   }
 }
 
+async function handleQuickPaste(slot) {
+  const trace = { seq: ++quickPasteTraceSeq };
+  const targetAppName = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+  const popupVisible = !!(win && !win.isDestroyed() && win.isVisible());
+  const popupFocused = popupVisible && win.isFocused();
+  const hasItem = history.some(h => hasNumpadSlot(h, slot));
+  diagnostics.record('shortcut.quick_paste', { ...trace, slot, popup_visible: popupVisible, popup_focused: popupFocused, has_item: hasItem, target_app: targetAppName, window: macWindowSnapshot() }, { forceFile: true });
+  if (popupFocused) {
+    win.webContents.executeJavaScript(`window.assignNumpad(${slot})`).catch(() => {});
+    return;
+  }
+  if (popupVisible) hidePopup();
+  await numpadPaste(slot, { targetAppName, trace });
+  if (win && !win.isDestroyed() && win.isVisible()) {
+    diagnostics.record('shortcut.quick_paste_force_hide', { ...trace, slot, window: macWindowSnapshot() }, { forceFile: true });
+    hidePopup();
+  }
+}
+
 function setShowShortcut(shortcut) {
   const previous = settings.show_shortcut || '';
   const next = normalizeShowShortcut(shortcut);
@@ -1870,11 +2260,45 @@ function setShowShortcut(shortcut) {
   return { ok: true, shortcut: effectiveShowShortcut(), custom: !!settings.show_shortcut };
 }
 
+function setQuickPasteShortcut(shortcut) {
+  const previous = settings.quick_paste_shortcut || '';
+  const next = normalizeQuickPasteShortcut(shortcut);
+  if (next && shortcutUsesFn(next)) {
+    return { ok: false, error: 'Globe shortcuts are only supported for the popup shortcut.' };
+  }
+  if (next && !shortcutHasKeyAndModifier(next)) {
+    const modifiers = process.platform === 'darwin'
+      ? 'Command, Control, or Option'
+      : 'Command, Control, Alt, or Win';
+    return { ok: false, error: `Use ${modifiers} with a number.` };
+  }
+  if (next && quickPasteSlotFromShortcut(next) == null) {
+    return { ok: false, error: 'Press a shortcut ending in 1-9.' };
+  }
+
+  settings.quick_paste_shortcut = next;
+  const result = registerShortcuts();
+  if (!result.quickPasteRegistered) {
+    settings.quick_paste_shortcut = previous;
+    registerShortcuts();
+    return { ok: false, error: 'Quick paste shortcut is already in use or not supported.' };
+  }
+
+  saveSettingsFile();
+  return {
+    ok: true,
+    shortcut: effectiveQuickPasteShortcut(),
+    custom: !!settings.quick_paste_shortcut,
+  };
+}
+
 function registerShortcuts() {
   globalShortcut.unregisterAll();
 
   let showShortcutRegistered = true;
+  let quickPasteRegistered = true;
   const showKey = globalShowShortcut();
+  const quickPasteKey = globalQuickPasteShortcut();
   const macosFnShowKey = process.platform === 'darwin' && shortcutUsesFn(settings.show_shortcut)
     ? settings.show_shortcut
     : '';
@@ -1910,18 +2334,42 @@ function registerShortcuts() {
     if (!showShortcutRegistered) logSafe(`Warning: Could not register popup shortcut ${showKey}`);
   }
 
-  if (process.platform === 'win32') {
-    return { showShortcutRegistered, showShortcut: effectiveShowShortcut() };
+  const quickPasteRegistrations = [];
+  if (quickPasteKey) {
+    for (let n = 1; n <= 9; n++) {
+      const key = quickPasteShortcutForSlot(quickPasteKey, n);
+      if (!key) {
+        quickPasteRegistered = false;
+        quickPasteRegistrations.push({ slot: n, key, registered: false });
+        continue;
+      }
+      const registered = globalShortcut.register(key, () => {
+        handleQuickPaste(n).catch(error => {
+          diagnostics.record('shortcut.quick_paste_error', { slot: n, error: error && error.message }, { forceFile: true });
+        });
+      });
+      quickPasteRegistrations.push({ slot: n, key, registered });
+      if (!registered) {
+        quickPasteRegistered = false;
+        logSafe(`Warning: Could not register ${key}`);
+      }
+    }
   }
+  diagnostics.record('shortcut.register', {
+    platform: process.platform,
+    show_key: showKey,
+    show_registered: showShortcutRegistered,
+    quick_paste_key: quickPasteKey,
+    quick_paste_registered: quickPasteRegistered,
+    quick_paste_registrations: quickPasteRegistrations,
+  }, { forceFile: true });
 
-  for (let n = 1; n <= 9; n++) {
-    const key = `Super+num${n}`;
-    const slot = n;
-    const registered = globalShortcut.register(key, () => handleNumpad(slot));
-    if (!registered) logSafe(`Warning: Could not register ${key}`);
-  }
-
-  return { showShortcutRegistered, showShortcut: effectiveShowShortcut() };
+  return {
+    showShortcutRegistered,
+    showShortcut: effectiveShowShortcut(),
+    quickPasteRegistered,
+    quickPasteShortcut: effectiveQuickPasteShortcut(),
+  };
 }
 
 nativeTheme.on('updated', notifyColorSchemeChanged);

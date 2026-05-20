@@ -123,6 +123,14 @@ document.getElementById('popupShell').innerHTML = Core.renderPopupShell({
       </div>
     </div>
     <div class="shortcut-status" id="shortcutStatus"></div>
+    <div class="setting-row shortcut-row">
+      <label>Quick paste</label>
+      <div class="shortcut-control">
+        <button class="shortcut-btn" id="quickPasteRecord" type="button"></button>
+        <button class="icon-btn shortcut-reset" id="quickPasteReset" title="Reset quick paste shortcut" type="button"><span class="mi">restart_alt</span></button>
+      </div>
+    </div>
+    <div class="shortcut-status" id="quickPasteStatus"></div>
     <div class="setting-row"><label>Max age (days)</label><input id="maxAge" type="number" min="1"></div>
     <div class="setting-row"><label>Max size (GB)</label><input id="maxSize" type="number" min="0.1" step="0.1"></div>
     <div class="settings-usage" id="usage"></div>
@@ -707,7 +715,7 @@ document.getElementById('closeBtn').addEventListener('click', () => window.api.h
 document.getElementById('settingsBtn').addEventListener('click', openSettings);
 document.getElementById('settingsBack').addEventListener('click', closeSettings);
 
-let shortcutRecording = false;
+let shortcutRecording = null;
 let manualSyncInFlight = false;
 
 function setManualSyncButtons(syncing) {
@@ -717,6 +725,13 @@ function setManualSyncButtons(syncing) {
     button.title = syncing ? 'Syncing...' : 'Sync now';
     button.setAttribute('aria-label', button.title);
   }
+}
+
+function manualSyncResultText(result) {
+  const ms = result && typeof result.ms === 'number' ? result.ms : 0;
+  const elapsed = ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+  const changed = result && result.local_changed ? 'updated local' : result && result.wrote_remotes ? 'wrote cloud' : 'up to date';
+  return `Synced: ${changed} (${elapsed})`;
 }
 
 async function runManualSync({ showSettingsStatus = false } = {}) {
@@ -729,14 +744,15 @@ async function runManualSync({ showSettingsStatus = false } = {}) {
     syncStatus.className = 'sync-status active';
   }
   try {
-    await window.api.syncNow();
+    const result = await window.api.syncNow();
     await refresh();
+    const statusText = manualSyncResultText(result);
     if (showSettingsStatus && syncStatus) {
-      syncStatus.textContent = 'Synced!';
+      syncStatus.textContent = statusText;
       syncStatus.className = 'sync-status active';
       setTimeout(() => openSettings(), 500);
     } else {
-      showToast('Synced');
+      showToast(statusText);
     }
   } catch (error) {
     if (showSettingsStatus && syncStatus) {
@@ -761,27 +777,57 @@ function shortcutLabel(accelerator) {
     .replace(/\+/g, ' + ');
 }
 
-function setShortcutStatus(message, isError = false) {
-  const status = document.getElementById('shortcutStatus');
+function shortcutStatusEl(kind) {
+  return document.getElementById(kind === 'quickPaste' ? 'quickPasteStatus' : 'shortcutStatus');
+}
+
+function shortcutRecordEl(kind) {
+  return document.getElementById(kind === 'quickPaste' ? 'quickPasteRecord' : 'shortcutRecord');
+}
+
+function shortcutResetEl(kind) {
+  return document.getElementById(kind === 'quickPaste' ? 'quickPasteReset' : 'shortcutReset');
+}
+
+function setShortcutStatus(kind, message, isError = false) {
+  const status = shortcutStatusEl(kind);
   status.textContent = message || '';
   status.className = 'shortcut-status' + (isError ? ' error' : '');
 }
 
 function stopShortcutRecording() {
-  shortcutRecording = false;
-  const button = document.getElementById('shortcutRecord');
-  if (button) button.classList.remove('recording');
+  const kind = shortcutRecording;
+  shortcutRecording = null;
+  for (const button of [shortcutRecordEl('show'), shortcutRecordEl('quickPaste')]) {
+    if (button) button.classList.remove('recording');
+  }
+  return kind;
 }
 
 function renderShortcutSettings(settings, { clearStatus = true } = {}) {
   const info = settings.shortcut_info || { show: 'CommandOrControl+Shift+V', custom: false };
-  const record = document.getElementById('shortcutRecord');
-  const reset = document.getElementById('shortcutReset');
+  const record = shortcutRecordEl('show');
+  const reset = shortcutResetEl('show');
   record.textContent = shortcutLabel(info.show);
   record.title = info.show;
   record.classList.remove('recording');
   reset.style.visibility = info.custom ? 'visible' : 'hidden';
-  if (clearStatus) setShortcutStatus('');
+  const quickRecord = shortcutRecordEl('quickPaste');
+  const quickReset = shortcutResetEl('quickPaste');
+  const quickShortcut = info.quickPaste || '';
+  if (quickShortcut) {
+    quickRecord.textContent = `${shortcutLabel(quickShortcut).replace(/\s\+\s[1-9]$/, '')} + 1-9`;
+    quickRecord.title = `${quickShortcut.replace(/[1-9]$/, '1')} ... ${quickShortcut.replace(/[1-9]$/, '9')}`;
+  } else {
+    quickRecord.textContent = 'Off';
+    quickRecord.title = 'Record quick paste shortcut';
+  }
+  quickRecord.classList.remove('recording');
+  quickReset.style.visibility = info.quickPasteCustom ? 'visible' : 'hidden';
+  if (clearStatus) {
+    setShortcutStatus('show', '');
+    setShortcutStatus('quickPaste', '');
+  }
 }
 
 function shortcutKeyFromEvent(e) {
@@ -847,31 +893,38 @@ function shortcutFromEvent(e) {
   return [...mods, key].join('+');
 }
 
-async function applyShortcut(shortcut) {
+async function applyShortcut(kind, shortcut) {
   stopShortcutRecording();
-  const result = await window.api.setShowShortcut(shortcut);
+  const result = kind === 'quickPaste'
+    ? await window.api.setQuickPasteShortcut(shortcut)
+    : await window.api.setShowShortcut(shortcut);
   if (!result || !result.ok) {
     const settings = await window.api.getSettings().catch(() => null);
     if (settings) renderShortcutSettings(settings, { clearStatus: false });
-    setShortcutStatus(result && result.error ? result.error : 'Shortcut was not saved.', true);
+    setShortcutStatus(kind, result && result.error ? result.error : 'Shortcut was not saved.', true);
     return;
   }
   const settings = await window.api.getSettings();
   renderShortcutSettings(settings);
 }
 
-document.getElementById('shortcutRecord').addEventListener('click', () => {
-  shortcutRecording = true;
-  const record = document.getElementById('shortcutRecord');
+function startShortcutRecording(kind) {
+  stopShortcutRecording();
+  shortcutRecording = kind;
+  const record = shortcutRecordEl(kind);
   record.classList.add('recording');
   record.textContent = 'Press keys';
-  setShortcutStatus('');
-});
+  setShortcutStatus(kind, '');
+}
 
-document.getElementById('shortcutReset').addEventListener('click', () => applyShortcut(''));
+document.getElementById('shortcutRecord').addEventListener('click', () => startShortcutRecording('show'));
+document.getElementById('quickPasteRecord').addEventListener('click', () => startShortcutRecording('quickPaste'));
+document.getElementById('shortcutReset').addEventListener('click', () => applyShortcut('show', ''));
+document.getElementById('quickPasteReset').addEventListener('click', () => applyShortcut('quickPaste', ''));
 
 document.addEventListener('keydown', async (e) => {
   if (!shortcutRecording) return;
+  const kind = shortcutRecording;
   e.preventDefault();
   e.stopPropagation();
   if (e.key === 'Escape') {
@@ -882,11 +935,13 @@ document.addEventListener('keydown', async (e) => {
   }
   const shortcut = shortcutFromEvent(e);
   if (!shortcut) {
-    setShortcutStatus(shortcutKeyFromEvent(e) ? 'Add a shortcut modifier.' : 'Press a non-modifier key.', true);
+    setShortcutStatus(kind, shortcutKeyFromEvent(e) ? 'Add a shortcut modifier.' : 'Press a non-modifier key.', true);
     return;
   }
-  const resolved = window.api.resolveShowShortcut ? await window.api.resolveShowShortcut(shortcut) : shortcut;
-  await applyShortcut(resolved);
+  const resolved = kind === 'show' && window.api.resolveShowShortcut
+    ? await window.api.resolveShowShortcut(shortcut)
+    : shortcut;
+  await applyShortcut(kind, resolved);
 }, true);
 
 document.getElementById('addGroupBtn').addEventListener('click', async () => {

@@ -124,6 +124,64 @@ function text(text, extra = {}) {
 }
 
 {
+  const seededDefault = text('seeded default', {
+    ts: 0.001,
+    updatedAt: 1,
+    pinUpdatedAt: 1,
+    pin: { number: 7, updatedAt: 1, numberUpdatedAt: 1 },
+  });
+  const legacyUserMacro = text('real user macro', {
+    ts: 100,
+    pin: { number: 7 },
+  });
+  const merged = model.mergeHistories([seededDefault], [legacyUserMacro], {});
+  assert.strictEqual(model.numpadSlotOf(merged.find(i => i.text === 'real user macro')), 7);
+  assert.strictEqual(model.numpadSlotOf(merged.find(i => i.text === 'seeded default')), null);
+}
+
+{
+  const userMacro = text('real user macro', {
+    ts: 200,
+    pin: { number: 7 },
+  });
+  const staleDefault = text('seeded default', { ts: 1 });
+  const result = model.migrateLegacyNumpadSlots(
+    [userMacro, staleDefault],
+    { 7: { type: 'text', text: 'seeded default' } },
+    { now: 1000 }
+  );
+  assert.strictEqual(result.skipped, 1);
+  assert.strictEqual(model.numpadSlotOf(userMacro), 7);
+  assert.strictEqual(model.numpadSlotOf(staleDefault), null);
+}
+
+{
+  const oldMacro = text('old macro', { pin: null });
+  const result = model.migrateLegacyNumpadSlots(
+    [oldMacro],
+    { 3: { type: 'text', text: 'old macro' } },
+    { now: 1000 }
+  );
+  assert.strictEqual(result.changed, true);
+  assert.strictEqual(result.migrated, 1);
+  assert.strictEqual(model.numpadSlotOf(oldMacro), 3);
+  assert.strictEqual(oldMacro.pin.numberUpdatedAt, 1000);
+}
+
+{
+  const winner = text('winner', { ts: 200, pin: { number: 7 } });
+  const loser = text('loser', { ts: 100, pin: { number: 7 } });
+  assert.strictEqual(model.dedupeNumpadSlots([winner, loser]), true);
+  assert.strictEqual(model.numpadSlotOf(winner), 7);
+  assert.strictEqual(model.numpadSlotOf(loser), null);
+  assert(loser.pin.numberUpdatedAt > 0);
+
+  const staleLoser = text('loser', { ts: 100, pin: { number: 7 } });
+  const merged = model.mergeHistories([loser], [staleLoser], {});
+  assert.strictEqual(model.numpadSlotOf(merged.find(i => i.text === 'loser')), null);
+}
+
+{
   const merged = model.mergeGroups(['keep', 'gone'], ['remote', 'gone'], [
     { name: 'gone', deletedAt: Date.now() },
   ]);
@@ -185,6 +243,9 @@ function text(text, extra = {}) {
   assert(appHtml.includes('site/shared/clipboard-popup.css'));
   assert(siteHtml.includes('/shared/clipboard-popup.css'));
   assert(appHtml.includes('Core.renderFilterBar'));
+  assert(appHtml.includes('id="quickPasteRecord"'));
+  assert(appHtml.includes('window.api.setQuickPasteShortcut'));
+  assert(appHtml.includes('Quick paste'));
   assert(siteHtml.includes('Core.renderFilterBar'));
   assert(appHtml.includes('Core.renderClipItem'));
   assert(siteHtml.includes('Core.renderClipItem'));
