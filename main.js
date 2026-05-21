@@ -498,7 +498,7 @@ function saveHistory() {
     file_bytes: fileSummary(DB_PATH).size || 0,
   }, 75);
   dataRevision++;
-  p2pNotifyLocalChange();
+  if (!suppressP2PNotify) p2pNotifyLocalChange();
   notifyDataChanged();
   scheduleSyncMerge();
   syncHookState();
@@ -980,6 +980,7 @@ let syncPendingForce = false;
 let lastSyncResult = null;
 const syncIdleWaiters = [];
 let lastFullSyncAt = 0;
+let suppressP2PNotify = false;
 const SYNC_FULL_INTERVAL_MS = 5 * 60 * 1000;
 const syncProviderCache = new Map();
 
@@ -1196,6 +1197,7 @@ const p2p = {
   port: 0,
   announceTimer: null,
   announceSoonTimer: null,
+  pushSoonTimer: null,
   peers: new Map(),
   pulls: new Map(),
   started: false,
@@ -1272,6 +1274,7 @@ function p2pStatePayload() {
     deviceId: settings.p2p_device_id,
     deviceName: p2pDeviceName(),
     build: BUILD_INFO.label,
+    port: p2p.port,
     revision: p2p.revision,
     history: storedHistory,
     settings: remoteSettingsPayload(),
@@ -1328,7 +1331,7 @@ function p2pServeAsset(res, kind, name) {
 function p2pRequestHandler(req, res) {
   const chunks = [];
   req.on('data', chunk => chunks.push(chunk));
-  req.on('end', () => {
+  req.on('end', async () => {
     const body = chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
     if (!p2pEnabled() || !p2pVerifyRequest(req, body)) {
       res.writeHead(401);
@@ -1350,6 +1353,38 @@ function p2pRequestHandler(req, res) {
       }
       if (req.method === 'GET' && url.pathname === '/state') {
         p2pSendJson(res, 200, p2pStatePayload());
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/state') {
+        let state = null;
+        try { state = JSON.parse(body.toString('utf8')); } catch {}
+        if (!state || state.protocol !== P2P_PROTOCOL_VERSION || !state.deviceId || state.deviceId === settings.p2p_device_id) {
+          res.writeHead(400);
+          res.end('Bad state');
+          return;
+        }
+        const port = Number(state.port) || 0;
+        if (port > 0 && port <= 65535) {
+          const previous = p2p.peers.get(state.deviceId);
+          p2p.peers.set(state.deviceId, {
+            deviceId: state.deviceId,
+            deviceName: state.deviceName || state.deviceId.slice(0, 8),
+            host: req.socket && req.socket.remoteAddress || previous && previous.host || '',
+            port,
+            revision: Number(state.revision) || 0,
+            build: state.build || '',
+            items: Array.isArray(state.history) ? state.history.length : 0,
+            lastSeen: Date.now(),
+            lastPulledRevision: previous ? previous.lastPulledRevision : 0,
+          });
+        }
+        const result = await p2pApplyState(state, {
+          peerName: state.deviceName || state.deviceId,
+          reason: 'push',
+          fetchedAssets: 0,
+          notifyPeers: false,
+        });
+        p2pSendJson(res, 200, result);
         return;
       }
       const imagePrefix = '/asset/image/';
@@ -1382,15 +1417,22 @@ function p2pAuthHeaders(method, requestPath, body = Buffer.alloc(0)) {
   };
 }
 
-function p2pHttpRequest(peer, requestPath, { binary = false } = {}) {
+function p2pHttpRequest(peer, requestPath, { binary = false, method = 'GET', body = Buffer.alloc(0) } = {}) {
+  const requestBody = Buffer.isBuffer(body) ? body : Buffer.from(String(body || ''));
   return new Promise((resolve, reject) => {
     const request = http.request({
       hostname: peer.host,
       port: peer.port,
       path: requestPath,
-      method: 'GET',
+      method,
       timeout: P2P_HTTP_TIMEOUT_MS,
-      headers: p2pAuthHeaders('GET', requestPath),
+      headers: {
+        ...p2pAuthHeaders(method, requestPath, requestBody),
+        ...(requestBody.length ? {
+          'Content-Type': 'application/json',
+          'Content-Length': requestBody.length,
+        } : {}),
+      },
     }, (response) => {
       const chunks = [];
       response.on('data', chunk => chunks.push(chunk));
@@ -1409,7 +1451,7 @@ function p2pHttpRequest(peer, requestPath, { binary = false } = {}) {
     });
     request.on('timeout', () => request.destroy(new Error('timeout')));
     request.on('error', reject);
-    request.end();
+    request.end(requestBody.length ? requestBody : undefined);
   });
 }
 
@@ -1441,6 +1483,47 @@ async function runWithConcurrency(items, limit, worker) {
   }));
 }
 
+async function p2pApplyState(state, { peerName, reason, fetchedAssets = 0, notifyPeers = true } = {}) {
+  const startedAt = Date.now();
+  if (!state || state.protocol !== P2P_PROTOCOL_VERSION || !state.deviceId || state.deviceId === settings.p2p_device_id) {
+    throw new Error('invalid peer state');
+  }
+  const remoteHistory = textBlobStore.hydrateHistory(Array.isArray(state.history) ? state.history : [], TEXT_DIR);
+  const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
+  const canonicalHistory = foldRemoteState(history.slice(), remoteHistory, state.settings || {});
+  const recoveredImages = await recoverRecentOrphanImages(canonicalHistory);
+  const localChanged = JSON.stringify(canonicalHistory) !== JSON.stringify(history);
+  const settingsChanged = JSON.stringify(remoteSettingsPayload()) !== previousSettingsJson;
+  if (localChanged) {
+    history.length = 0;
+    history.push(...canonicalHistory);
+  }
+  if (localChanged || settingsChanged) {
+    applyingSyncState = true;
+    suppressP2PNotify = !notifyPeers;
+    try {
+      saveHistory();
+      saveSettingsFile();
+    } finally {
+      suppressP2PNotify = false;
+      applyingSyncState = false;
+    }
+    scheduleSyncMerge();
+  }
+  diagnostics.record('p2p.state_apply', {
+    peer: peerName || state.deviceName || state.deviceId,
+    reason,
+    ms: Date.now() - startedAt,
+    remote_items: remoteHistory.length,
+    local_changed: localChanged,
+    settings_changed: settingsChanged,
+    fetched_assets: fetchedAssets,
+    recovered_images: recoveredImages,
+    items: history.length,
+  }, { forceFile: localChanged || fetchedAssets > 0 });
+  return { ok: true, local_changed: localChanged, settings_changed: settingsChanged, fetched_assets: fetchedAssets };
+}
+
 async function p2pPullPeer(peer, reason = 'discovery') {
   if (!p2pEnabled() || !peer || peer.deviceId === settings.p2p_device_id) return null;
   const existing = p2p.pulls.get(peer.deviceId);
@@ -1460,40 +1543,19 @@ async function p2pPullPeer(peer, reason = 'discovery') {
     await runWithConcurrency(assets, P2P_ASSET_FETCH_CONCURRENCY, async asset => {
       if (await p2pFetchMissingAsset(peer, asset.kind, asset.name)) fetchedAssets++;
     });
-
-    const remoteHistory = textBlobStore.hydrateHistory(Array.isArray(state.history) ? state.history : [], TEXT_DIR);
-    const previousSettingsJson = JSON.stringify(remoteSettingsPayload());
-    let canonicalHistory = foldRemoteState(history.slice(), remoteHistory, state.settings || {});
-    const recoveredImages = await recoverRecentOrphanImages(canonicalHistory);
-    const localChanged = JSON.stringify(canonicalHistory) !== JSON.stringify(history);
-    const settingsChanged = JSON.stringify(remoteSettingsPayload()) !== previousSettingsJson;
-    if (localChanged) {
-      history.length = 0;
-      history.push(...canonicalHistory);
-    }
-    if (localChanged || settingsChanged) {
-      applyingSyncState = true;
-      try {
-        saveHistory();
-        saveSettingsFile();
-      } finally {
-        applyingSyncState = false;
-      }
-      scheduleSyncMerge();
-      p2pNotifyLocalChange();
-    }
+    const result = await p2pApplyState(state, {
+      peerName: peer.deviceName || peer.deviceId,
+      reason,
+      fetchedAssets,
+      notifyPeers: true,
+    });
     diagnostics.record('p2p.pull', {
       peer: peer.deviceName || peer.deviceId,
       reason,
       ms: Date.now() - startedAt,
-      remote_items: remoteHistory.length,
-      local_changed: localChanged,
-      settings_changed: settingsChanged,
-      fetched_assets: fetchedAssets,
-      recovered_images: recoveredImages,
-      items: history.length,
-    }, { forceFile: localChanged || fetchedAssets > 0 });
-    return { ok: true, local_changed: localChanged, settings_changed: settingsChanged, fetched_assets: fetchedAssets };
+      ...result,
+    }, { forceFile: result.local_changed || fetchedAssets > 0 });
+    return result;
   })().catch(error => {
     diagnostics.record('p2p.pull.error', {
       peer: peer.deviceName || peer.deviceId,
@@ -1532,6 +1594,40 @@ function p2pAnnounceNow() {
   } catch {}
 }
 
+async function p2pPushPeer(peer, reason = 'local-change') {
+  if (!p2pEnabled() || !peer || peer.deviceId === settings.p2p_device_id) return null;
+  const body = Buffer.from(JSON.stringify(p2pStatePayload()));
+  try {
+    const result = await p2pHttpRequest(peer, '/state', { method: 'POST', body });
+    diagnostics.record('p2p.push', {
+      peer: peer.deviceName || peer.deviceId,
+      reason,
+      ok: !!(result && result.ok),
+      local_changed: result && result.local_changed,
+      settings_changed: result && result.settings_changed,
+    }, { forceFile: result && result.local_changed });
+    return result;
+  } catch (error) {
+    diagnostics.record('p2p.push.error', {
+      peer: peer.deviceName || peer.deviceId,
+      reason,
+      error: error && error.message,
+    }, { forceFile: true });
+    return { ok: false, error: error && error.message };
+  }
+}
+
+function p2pPushPeersSoon(reason = 'local-change') {
+  if (!p2pEnabled()) return;
+  if (p2p.pushSoonTimer) clearTimeout(p2p.pushSoonTimer);
+  p2p.pushSoonTimer = setTimeout(() => {
+    p2p.pushSoonTimer = null;
+    const peers = p2pPeerSummaries();
+    for (const peer of peers) p2pPushPeer(peer, reason);
+  }, 150);
+  if (p2p.pushSoonTimer.unref) p2p.pushSoonTimer.unref();
+}
+
 function p2pNotifyLocalChange() {
   p2p.revision++;
   if (!p2pEnabled()) return;
@@ -1541,6 +1637,7 @@ function p2pNotifyLocalChange() {
     p2pAnnounceNow();
   }, 50);
   if (p2p.announceSoonTimer.unref) p2p.announceSoonTimer.unref();
+  p2pPushPeersSoon('local-change');
 }
 
 function p2pHandleAnnouncement(message, rinfo) {
@@ -2759,7 +2856,7 @@ function setupIPC() {
 
   ipcMain.handle('sync-now', async () => {
     const peers = p2pPeerSummaries();
-    const p2pResults = await Promise.all(peers.map(peer => (
+    const p2pResults = await Promise.all(peers.flatMap(peer => ([
       withTimeout(
         p2pPullPeer(peer, 'manual'),
         P2P_MANUAL_PULL_TIMEOUT_MS,
@@ -2770,8 +2867,9 @@ function setupIPC() {
           error: error && error.message,
         }, { forceFile: true });
         return { ok: false, peer: peer.deviceName || peer.deviceId, error: error && error.message };
-      })
-    )));
+      }),
+      p2pPushPeer(peer, 'manual'),
+    ])));
     const result = await syncMerge({ force: true });
     if (result) result.p2p = p2pResults;
     return result;
