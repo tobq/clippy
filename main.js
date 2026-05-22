@@ -1135,6 +1135,49 @@ async function syncDiagnostics() {
   };
 }
 
+function diagnosticsDeviceFileName() {
+  const device = String(settings.p2p_device_id || os.hostname() || 'device').replace(/[^a-z0-9_-]+/ig, '-').slice(0, 48);
+  const host = String(os.hostname() || process.platform).replace(/[^a-z0-9_-]+/ig, '-').slice(0, 48);
+  return `${host}-${device}.json`;
+}
+
+async function writeSyncedDiagnostics(syncPaths, lastResult) {
+  if (!diagnostics.isEnabled() || !Array.isArray(syncPaths) || !syncPaths.length) return;
+  const payload = JSON.stringify({
+    generated_at: new Date().toISOString(),
+    device: {
+      id: settings.p2p_device_id || '',
+      name: p2pDeviceName(),
+      hostname: os.hostname(),
+      platform: process.platform,
+    },
+    build: BUILD_INFO,
+    runtime: runtimeDiagnosticSnapshot(),
+    p2p: p2pStatus(),
+    local: stateSummary(DATA_DIR),
+    last_sync_result: lastResult || lastSyncResult,
+    diagnostics: diagnostics.snapshot({
+      log_tail: diagnostics.fileTail(96 * 1024),
+    }),
+  }, null, 2);
+  const fileName = diagnosticsDeviceFileName();
+  await Promise.all(syncPaths.map(async syncPath => {
+    try {
+      const dir = path.join(syncPath, 'boardclip-diagnostics');
+      await fs.promises.mkdir(dir, { recursive: true });
+      await atomicWriteFileAsync(path.join(dir, fileName), payload);
+    } catch {}
+  }));
+}
+
+function scheduleSyncedDiagnostics(syncPaths, lastResult) {
+  if (!diagnostics.isEnabled()) return;
+  const timer = setTimeout(() => {
+    writeSyncedDiagnostics(syncPaths, lastResult).catch(() => {});
+  }, 0);
+  if (timer.unref) timer.unref();
+}
+
 async function readFileUtf8IfExists(filePath) {
   try { return await fs.promises.readFile(filePath, 'utf-8'); } catch { return null; }
 }
@@ -1989,6 +2032,7 @@ async function syncMerge(options = {}) {
     } else {
       resolveSyncIdle(result);
     }
+    scheduleSyncedDiagnostics(syncPaths, result);
   }
 }
 
@@ -2014,6 +2058,7 @@ let lastImageProbeToken = '';
 let lastCapturedImageToken = '';
 let lastImageProbeAt = 0;
 let lastSlowPollLogAt = 0;
+let lastPollGateLogAt = 0;
 let pollGate = true;
 const IMAGE_CLIPBOARD_PROBE_MS = 3000;
 const SLOW_CLIPBOARD_POLL_MS = 250;
@@ -2030,6 +2075,29 @@ function formatsContainImage(formatsKey) {
   return clipboardCapture.formatsSuggestImage(formatsKey);
 }
 
+function textLooksLikeLink(text) {
+  return /^(?:https?:\/\/|www\.|mailto:|file:\/\/)/i.test(String(text || '').trim());
+}
+
+function historyEntryDiagnostics(entry) {
+  if (!entry) return {};
+  if (entry.type === 'image') {
+    return {
+      type: 'image',
+      image: entry.image,
+      width: entry.width,
+      height: entry.height,
+    };
+  }
+  const text = String(entry.text || '');
+  return {
+    type: 'text',
+    text_length: text.length,
+    text_hash: crypto.createHash('sha256').update(text).digest('hex').slice(0, 16),
+    looks_like_link: textLooksLikeLink(text),
+  };
+}
+
 function addToHistory(entry, matchFn) {
   const startedAt = Date.now();
   ensureItemId(entry);
@@ -2039,6 +2107,12 @@ function addToHistory(entry, matchFn) {
   // Check if already at top
   if (history.length && matchFn(history[0])) {
     if (tombstoneRemoved) saveSettingsFile();
+    diagnostics.record('history.add_skipped', {
+      reason: 'already_top',
+      ...historyEntryDiagnostics(entry),
+      items: history.length,
+      ms: Date.now() - startedAt,
+    }, { forceFile: true });
     return;
   }
   // Find existing, preserve pin metadata
@@ -2055,16 +2129,21 @@ function addToHistory(entry, matchFn) {
   if (tombstoneRemoved) saveSettingsFile();
   saveHistory();
   diagnostics.record('history.add', {
-    type: entry.type,
-    text_length: entry.type === 'text' ? (entry.text || '').length : undefined,
-    image: entry.type === 'image' ? { width: entry.width, height: entry.height } : undefined,
+    ...historyEntryDiagnostics(entry),
+    moved_existing: existIdx >= 0,
     items: history.length,
     ms: Date.now() - startedAt,
-  });
+  }, { forceFile: true });
 }
 
 function pollClipboard() {
-  if (!pollGate) return;
+  if (!pollGate) {
+    if (Date.now() - lastPollGateLogAt > 5000) {
+      lastPollGateLogAt = Date.now();
+      diagnostics.record('clipboard.poll_blocked', { reason: 'poll_gate' }, { forceFile: true });
+    }
+    return;
+  }
 
   const startedAt = Date.now();
   let formatsKey = '';
@@ -2072,6 +2151,20 @@ function pollClipboard() {
   try {
     const formats = clipboardFormats();
     formatsKey = clipboardCapture.formatsKey(formats);
+    const hasImageFormat = formatsContainImage(formatsKey);
+    const text = clipboard.readText();
+    const preferText = !!text && text !== lastText && (!hasImageFormat || textLooksLikeLink(text));
+    if (preferText) {
+      action = hasImageFormat ? 'text_added_preferred_over_image' : 'text_added';
+      lastText = text;
+      lastImgHash = '';
+      addToHistory(
+        { type: 'text', text, ts: Date.now() / 1000 },
+        it => it.text === text
+      );
+      return;
+    }
+
     if (formatsContainImage(formatsKey)) {
       const now = Date.now();
       const probeToken = clipboardCapture.clipboardChangeToken(formats);
@@ -2087,7 +2180,10 @@ function pollClipboard() {
       lastImageProbeAt = now;
 
       const captured = clipboardCapture.readClipboardImage({ clipboard, nativeImage, formats });
-      if (!captured) return;
+      if (!captured) {
+        action = text ? 'image_capture_empty_with_text' : 'image_capture_empty';
+        return;
+      }
       lastCapturedImageToken = probeToken;
       const buf = captured.buffer;
       const h = imageHash(buf);
@@ -2106,7 +2202,6 @@ function pollClipboard() {
 
     lastImageProbeToken = '';
     lastCapturedImageToken = '';
-    const text = clipboard.readText();
     if (text && text !== lastText) {
       action = 'text_added';
       lastText = text;
