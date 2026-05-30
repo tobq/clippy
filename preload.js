@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   paste: (id) => ipcRenderer.invoke('paste', id),
   pasteAndHide: (id) => ipcRenderer.invoke('paste-and-hide', id),
+  numpadPasteAndHide: (slot) => ipcRenderer.invoke('numpad-paste-and-hide', slot),
   hidePopup: () => ipcRenderer.invoke('hide-popup'),
   copy: (text) => ipcRenderer.invoke('copy', text),
   deleteItem: (id) => ipcRenderer.invoke('delete-item', id),

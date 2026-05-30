@@ -2757,6 +2757,25 @@ async function pasteAndHide(id) {
   }
 }
 
+async function numpadPasteAndHide(slot) {
+  const slotNum = Number(slot);
+  if (!Number.isInteger(slotNum) || slotNum < 1 || slotNum > 9) return;
+
+  const trace = {
+    seq: ++quickPasteTraceSeq,
+    received_at: Date.now(),
+    source: 'panel_number',
+  };
+  diagnostics.record('shortcut.quick_paste_received', { ...trace, slot: slotNum }, { forceFile: true });
+
+  if (win && !win.isDestroyed() && win.isVisible()) hidePopup();
+  if (process.platform === 'win32' && savedForegroundWindow) {
+    winPaste.setForegroundWindow(savedForegroundWindow);
+  }
+  await new Promise(r => setTimeout(r, 15));
+  await numpadPaste(slotNum, { trace });
+}
+
 function createTray() {
   let trayIcon;
   if (fs.existsSync(APP_ICON_PATH)) {
@@ -2856,6 +2875,7 @@ function setupIPC() {
   });
 
   ipcMain.handle('paste-and-hide', (_, id) => pasteAndHide(id));
+  ipcMain.handle('numpad-paste-and-hide', (_, slot) => numpadPasteAndHide(slot));
 
   ipcMain.handle('hide-popup', () => hidePopup());
 

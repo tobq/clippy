@@ -663,7 +663,7 @@ searchEl.addEventListener('keydown', e => {
     const nmap = numpadMap();
     if (n in nmap) {
       e.preventDefault();
-      window.api.pasteAndHide(nmap[n]);
+      window.api.numpadPasteAndHide(n);
       return;
     }
   }
