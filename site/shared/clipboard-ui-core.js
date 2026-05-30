@@ -282,7 +282,6 @@
       metaHtml = `<span data-relative-ts="${item.ts || 0}">${ago(item.ts)}</span><span>${text.length.toLocaleString()} chars</span>`;
     }
     if (np) metaHtml += `<span class="numpad-tag">#${np}</span>`;
-    if (pinned) metaHtml += '<span class="pin-tag">pinned</span>';
     for (const group of groupsOf(item)) metaHtml += `<span class="group-tag">${escapeHtml(group)}</span>`;
     const previewClass = opts.expanded ? 'expanded' : 'collapsed';
     const selected = opts.selected ? ' selected' : '';

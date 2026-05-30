@@ -6,11 +6,12 @@ const crypto = require('crypto');
 const os = require('os');
 const http = require('http');
 const dgram = require('dgram');
-const { exec, spawn } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
 
 // Windows-specific fast input (keybd_event, Get/SetForegroundWindow).
 // Module is a no-op on non-Windows platforms so it's safe to require unconditionally.
 const winPaste = require('./lib/windows-paste');
+const macPaste = require('./lib/macos-paste');
 const getBuildInfo = require('./lib/build-info');
 const getCloudAccounts = require('./lib/cloud-accounts');
 const blobStore = require('./lib/blob-store');
@@ -762,6 +763,7 @@ function remoteSettingsPayload() {
   delete remoteSave.show_shortcut;
   delete remoteSave.quick_paste_shortcut;
   delete remoteSave.p2p_device_id;
+  delete remoteSave.popup_size;
   return remoteSave;
 }
 
@@ -2261,12 +2263,31 @@ function escapeAppleScriptString(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function runAppleScript(script, timeoutMs = 1500) {
+  return new Promise(resolve => {
+    const startedAt = Date.now();
+    execFile('osascript', ['-e', script], { timeout: timeoutMs }, (error, stdout) => {
+      resolve({
+        ok: !error,
+        error: error && error.message,
+        stdout: String(stdout || '').trim(),
+        ms: Date.now() - startedAt,
+      });
+    });
+  });
+}
+
 function getFrontmostMacAppName() {
   if (process.platform !== 'darwin') return Promise.resolve('');
-  return new Promise(resolve => {
-    exec(`osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'`, (error, stdout) => {
-      resolve(error ? '' : String(stdout || '').trim());
-    });
+  return runAppleScript('tell application "System Events" to get name of first application process whose frontmost is true').then(result => {
+    if (result.ms > 250 || !result.ok) {
+      diagnostics.record('macos.frontmost_app.slow', {
+        ms: result.ms,
+        ok: result.ok,
+        error: result.error,
+      }, { forceFile: true });
+    }
+    return result.ok ? result.stdout : '';
   });
 }
 
@@ -2284,31 +2305,56 @@ function macWindowSnapshot() {
 let quickPasteTraceSeq = 0;
 
 // --- Paste simulation ---
-// Sends Ctrl+V (Cmd+V on mac) to the currently focused window. On Windows
-// this uses a direct keybd_event call via koffi (microseconds, no side
-// effects). On macOS we use osascript because there's no equivalent native
-// Electron API — acceptable there because the Mac paste flow is less hot.
+// Sends Ctrl+V (Cmd+V on mac) to the currently focused window. The hot path
+// uses native OS event APIs; AppleScript is only a macOS fallback when we must
+// re-activate a previously frontmost app after hiding the popup.
 function simulatePaste(targetAppName = '') {
   if (process.platform === 'win32') {
     winPaste.sendCtrlV();
     return Promise.resolve();
   }
-  return new Promise((resolve) => {
-    const target = escapeAppleScriptString(targetAppName);
-    const activateTarget = target
-      ? `try\n            tell application "${target}" to activate\n            delay 0.05\n          end try`
-      : '';
-    exec(`osascript -e '
+  if (process.platform === 'darwin' && !targetAppName) {
+    const startedAt = Date.now();
+    const result = macPaste.sendCommandV();
+    result.ms = Date.now() - startedAt;
+    if (result.ok) return Promise.resolve(result);
+    diagnostics.record('macos.simulate_paste.native_failed', {
+      ms: result.ms,
+      error: result.error,
+    }, { forceFile: true });
+  }
+  const target = escapeAppleScriptString(targetAppName);
+  const script = target ? `
       tell application "System Events"
-        ${activateTarget}
+        try
+          tell application "${target}" to activate
+          delay 0.05
+        end try
         keystroke "v" using command down
-      end tell'`, (error) => resolve({ ok: !error, error: error && error.message }));
+      end tell`
+    : 'tell application "System Events" to keystroke "v" using command down';
+  return runAppleScript(script, 2000).then(result => {
+    if (process.platform === 'darwin' && !targetAppName && result.ok) {
+      diagnostics.record('macos.simulate_paste.native_fallback_ok', {
+        ms: result.ms,
+      }, { forceFile: true });
+    }
+    if (result.ms > 250 || !result.ok) {
+      diagnostics.record('macos.simulate_paste.slow', {
+        ms: result.ms,
+        ok: result.ok,
+        target_app: targetAppName || '',
+        error: result.error,
+      }, { forceFile: true });
+    }
+    return result;
   });
 }
 
 // --- Numpad quick-paste ---
 async function numpadPaste(slotNum, options = {}) {
   const trace = options.trace || {};
+  const startedAt = Date.now();
   // Drop the call if a previous paste is still in its restore window —
   // otherwise rapid Num-key presses race and the second call's "backup"
   // captures the first call's pasted content.
@@ -2324,9 +2370,13 @@ async function numpadPaste(slotNum, options = {}) {
 
   pollGate = false;
   let backup = null;
+  let pasteResult = null;
   try {
+    const backupStartedAt = Date.now();
     backup = backupClipboard();
+    const setStartedAt = Date.now();
     setClipboardToItem(item);
+    const clipboardSetMs = Date.now() - setStartedAt;
     diagnostics.record('shortcut.quick_paste_clipboard_set', {
       ...trace,
       slot: slotNum,
@@ -2334,14 +2384,22 @@ async function numpadPaste(slotNum, options = {}) {
       item_type: item.type || 'text',
       text_len: item.type === 'image' ? undefined : String(item.text || '').length,
       backup_text_len: backup && backup.text ? backup.text.length : 0,
+      backup_ms: setStartedAt - backupStartedAt,
+      clipboard_set_ms: clipboardSetMs,
+      since_received_ms: trace.received_at ? Date.now() - trace.received_at : undefined,
       window: macWindowSnapshot(),
     }, { forceFile: true });
   // Minimum delay for Windows clipboard propagation before paste. 15ms is
   // tight but reliable — clipboard.writeText is synchronous and Windows
   // WM_CLIPBOARDUPDATE propagates within a few ms on any modern system.
     await new Promise(r => setTimeout(r, 15));
-    const pasteResult = await simulatePaste(options.targetAppName || '');
-    const frontmostAfterPaste = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+    const pasteStartedAt = Date.now();
+    pasteResult = await simulatePaste(options.targetAppName || '');
+    const pasteMs = Date.now() - pasteStartedAt;
+    const shouldCheckFrontmost = process.platform === 'darwin' && (options.targetAppName || (pasteResult && pasteResult.ok === false));
+    const frontmostStartedAt = Date.now();
+    const frontmostAfterPaste = shouldCheckFrontmost ? await getFrontmostMacAppName() : '';
+    const frontmostMs = shouldCheckFrontmost ? Date.now() - frontmostStartedAt : 0;
     diagnostics.record('shortcut.quick_paste_pasted', {
       ...trace,
       slot: slotNum,
@@ -2349,18 +2407,30 @@ async function numpadPaste(slotNum, options = {}) {
       frontmost_after_paste: frontmostAfterPaste,
       paste_ok: !pasteResult || pasteResult.ok !== false,
       paste_error: pasteResult && pasteResult.error,
+      paste_ms: pasteMs,
+      frontmost_ms: frontmostMs,
+      since_received_ms: trace.received_at ? Date.now() - trace.received_at : undefined,
       window: macWindowSnapshot(),
     }, { forceFile: true });
     await new Promise(r => setTimeout(r, 150));
   // Fire-and-forget restore: the target app needs ~100-150ms to read from
   // the clipboard after receiving Ctrl+V. We don't block the caller on that.
   } finally {
+    const restoreStartedAt = Date.now();
     try { restoreClipboard(backup); } catch {}
-    const frontmostAfterRestore = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+    const restoreMs = Date.now() - restoreStartedAt;
+    const shouldCheckFrontmost = process.platform === 'darwin' && (options.targetAppName || (pasteResult && pasteResult.ok === false));
+    const frontmostStartedAt = Date.now();
+    const frontmostAfterRestore = shouldCheckFrontmost ? await getFrontmostMacAppName() : '';
+    const frontmostMs = shouldCheckFrontmost ? Date.now() - frontmostStartedAt : 0;
     diagnostics.record('shortcut.quick_paste_restored', {
       ...trace,
       slot: slotNum,
       frontmost_after_restore: frontmostAfterRestore,
+      restore_ms: restoreMs,
+      frontmost_ms: frontmostMs,
+      total_ms: Date.now() - startedAt,
+      since_received_ms: trace.received_at ? Date.now() - trace.received_at : undefined,
       window: macWindowSnapshot(),
     }, { forceFile: true });
     pollGate = true;
@@ -2370,14 +2440,47 @@ async function numpadPaste(slotNum, options = {}) {
 // --- Window & state ---
 const WIN_W = 460;
 const WIN_H = 520;
+const MIN_WIN_W = 360;
+const MIN_WIN_H = 360;
+const MAX_WIN_W = 900;
+const MAX_WIN_H = 900;
 let win = null;
 let tray = null;
+
+function popupSizeFromSettings() {
+  const size = settings.popup_size && typeof settings.popup_size === 'object' ? settings.popup_size : {};
+  const width = Math.min(MAX_WIN_W, Math.max(MIN_WIN_W, Math.round(Number(size.width) || WIN_W)));
+  const height = Math.min(MAX_WIN_H, Math.max(MIN_WIN_H, Math.round(Number(size.height) || WIN_H)));
+  return { width, height };
+}
+
+let savePopupSizeTimer = null;
+function schedulePopupSizeSave() {
+  if (!win || win.isDestroyed()) return;
+  if (savePopupSizeTimer) clearTimeout(savePopupSizeTimer);
+  savePopupSizeTimer = setTimeout(() => {
+    savePopupSizeTimer = null;
+    if (!win || win.isDestroyed()) return;
+    const { width, height } = win.getBounds();
+    const next = {
+      width: Math.min(MAX_WIN_W, Math.max(MIN_WIN_W, Math.round(width))),
+      height: Math.min(MAX_WIN_H, Math.max(MIN_WIN_H, Math.round(height))),
+    };
+    const current = popupSizeFromSettings();
+    if (next.width === current.width && next.height === current.height) return;
+    settings.popup_size = next;
+    saveSettingsFile();
+    diagnostics.record('popup.resize_saved', next, { forceFile: diagnostics.isEnabled() });
+  }, 250);
+  if (savePopupSizeTimer.unref) savePopupSizeTimer.unref();
+}
 
 function currentColorScheme() {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 }
 
 function appBackgroundColor() {
+  if (process.platform === 'darwin') return '#00000000';
   return nativeTheme.shouldUseDarkColors ? '#131313' : '#ffffff';
 }
 
@@ -2396,14 +2499,22 @@ function configureMacPopupWindow(window) {
 }
 
 function createPopup() {
+  const initialSize = popupSizeFromSettings();
   win = new BrowserWindow({
-    width: WIN_W,
-    height: WIN_H,
+    width: initialSize.width,
+    height: initialSize.height,
+    minWidth: MIN_WIN_W,
+    minHeight: MIN_WIN_H,
+    maxWidth: MAX_WIN_W,
+    maxHeight: MAX_WIN_H,
     frame: false,
     alwaysOnTop: true,
     show: false,
     skipTaskbar: true,
-    resizable: false,
+    resizable: true,
+    transparent: process.platform === 'darwin',
+    vibrancy: process.platform === 'darwin' ? 'popover' : undefined,
+    visualEffectState: process.platform === 'darwin' ? 'active' : undefined,
     backgroundColor: appBackgroundColor(),
     icon: APP_ICON_PATH,
     webPreferences: {
@@ -2415,6 +2526,7 @@ function createPopup() {
 
   configureMacPopupWindow(win);
   win.loadFile(path.join(SCRIPT_DIR, 'index.html'));
+  win.on('resize', schedulePopupSizeSave);
 
   // Dev/source installs: auto-reload renderer files while iterating.
   let reloadTimer = null;
@@ -2573,9 +2685,12 @@ function showPopup() {
   const cursor = screen.getCursorScreenPoint();
   const display = screen.getDisplayNearestPoint(cursor);
   const { x: wx, y: wy, width: ww, height: wh } = display.workArea;
+  const { width, height } = win.getBounds();
+  const popupWidth = Math.min(width, ww);
+  const popupHeight = Math.min(height, wh);
 
-  const x = Math.min(Math.max(wx, cursor.x - WIN_W / 2), wx + ww - WIN_W);
-  const y = Math.min(Math.max(wy, cursor.y - 50), wy + wh - WIN_H);
+  const x = Math.min(Math.max(wx, cursor.x - popupWidth / 2), wx + ww - popupWidth);
+  const y = Math.min(Math.max(wy, cursor.y - 50), wy + wh - popupHeight);
 
   configureMacPopupWindow(win);
   if (process.platform === 'darwin') {
@@ -3014,12 +3129,26 @@ function handleNumpad(slot) {
 }
 
 async function handleQuickPaste(slot) {
-  const trace = { seq: ++quickPasteTraceSeq };
-  const targetAppName = process.platform === 'darwin' ? await getFrontmostMacAppName() : '';
+  const trace = { seq: ++quickPasteTraceSeq, received_at: Date.now() };
+  diagnostics.record('shortcut.quick_paste_received', { ...trace, slot }, { forceFile: true });
   const popupVisible = !!(win && !win.isDestroyed() && win.isVisible());
   const popupFocused = popupVisible && win.isFocused();
+  const frontmostStartedAt = Date.now();
+  const shouldRestoreMacFocus = process.platform === 'darwin' && popupVisible;
+  const targetAppName = shouldRestoreMacFocus ? await getFrontmostMacAppName() : '';
+  const frontmostMs = Date.now() - frontmostStartedAt;
   const hasItem = history.some(h => hasNumpadSlot(h, slot));
-  diagnostics.record('shortcut.quick_paste', { ...trace, slot, popup_visible: popupVisible, popup_focused: popupFocused, has_item: hasItem, target_app: targetAppName, window: macWindowSnapshot() }, { forceFile: true });
+  diagnostics.record('shortcut.quick_paste', {
+    ...trace,
+    slot,
+    popup_visible: popupVisible,
+    popup_focused: popupFocused,
+    has_item: hasItem,
+    target_app: targetAppName,
+    frontmost_ms: frontmostMs,
+    since_received_ms: Date.now() - trace.received_at,
+    window: macWindowSnapshot(),
+  }, { forceFile: true });
   if (popupFocused) {
     win.webContents.executeJavaScript(`window.assignNumpad(${slot})`).catch(() => {});
     return;
@@ -3117,6 +3246,7 @@ function registerShortcuts() {
 
   if (process.platform === 'darwin') {
     const hook = getMacosHotkey();
+    hook.clearQuickPasteShortcuts();
     if (macosFnShowKey) {
       const result = hook.install({ shortcut: macosFnShowKey, onPressed: showPopup });
       showShortcutRegistered = !!result.ok;
@@ -3133,22 +3263,44 @@ function registerShortcuts() {
 
   const quickPasteRegistrations = [];
   if (quickPasteKey) {
-    for (let n = 1; n <= 9; n++) {
-      const key = quickPasteShortcutForSlot(quickPasteKey, n);
-      if (!key) {
-        quickPasteRegistered = false;
-        quickPasteRegistrations.push({ slot: n, key, registered: false });
-        continue;
-      }
-      const registered = globalShortcut.register(key, () => {
-        handleQuickPaste(n).catch(error => {
-          diagnostics.record('shortcut.quick_paste_error', { slot: n, error: error && error.message }, { forceFile: true });
-        });
+    if (process.platform === 'darwin') {
+      const hook = getMacosHotkey();
+      const result = hook.installQuickPaste({
+        shortcut: quickPasteKey,
+        onSlot: slot => {
+          handleQuickPaste(slot).catch(error => {
+            diagnostics.record('shortcut.quick_paste_error', { slot, error: error && error.message }, { forceFile: true });
+          });
+        },
       });
-      quickPasteRegistrations.push({ slot: n, key, registered });
-      if (!registered) {
-        quickPasteRegistered = false;
-        logSafe(`Warning: Could not register ${key}`);
+      quickPasteRegistered = !!result.ok;
+      for (let n = 1; n <= 9; n++) {
+        quickPasteRegistrations.push({
+          slot: n,
+          key: quickPasteShortcutForSlot(quickPasteKey, n),
+          registered: quickPasteRegistered,
+          backend: 'carbon',
+        });
+      }
+      if (!result.ok) logSafe(`Warning: ${result.error}`);
+    } else {
+      for (let n = 1; n <= 9; n++) {
+        const key = quickPasteShortcutForSlot(quickPasteKey, n);
+        if (!key) {
+          quickPasteRegistered = false;
+          quickPasteRegistrations.push({ slot: n, key, registered: false, backend: 'electron' });
+          continue;
+        }
+        const registered = globalShortcut.register(key, () => {
+          handleQuickPaste(n).catch(error => {
+            diagnostics.record('shortcut.quick_paste_error', { slot: n, error: error && error.message }, { forceFile: true });
+          });
+        });
+        quickPasteRegistrations.push({ slot: n, key, registered, backend: 'electron' });
+        if (!registered) {
+          quickPasteRegistered = false;
+          logSafe(`Warning: Could not register ${key}`);
+        }
       }
     }
   }

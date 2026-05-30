@@ -96,7 +96,6 @@
 .preview img { max-width: 100%; max-height: 60px; border-radius: 4px; object-fit: cover; }
 .meta { margin-top: 3px; font-size: 10px; color: var(--text-dim); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .numpad-tag { color: var(--green); }
-.pin-tag { color: var(--pin); }
 .group-tag { color: var(--accent); }
 .actions { display: flex; align-items: center; gap: 1px; flex-shrink: 0; opacity: 0; transition: opacity .1s; }
 .item:hover .actions { opacity: 1; }
