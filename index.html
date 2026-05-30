@@ -828,6 +828,9 @@ function stopShortcutRecording() {
   for (const button of [shortcutRecordEl('show'), shortcutRecordEl('quickPaste')]) {
     if (button) button.classList.remove('recording');
   }
+  if (kind && window.api.resumeShortcuts) {
+    window.api.resumeShortcuts().catch(() => {});
+  }
   return kind;
 }
 
@@ -935,8 +938,11 @@ async function applyShortcut(kind, shortcut) {
   renderShortcutSettings(settings);
 }
 
-function startShortcutRecording(kind) {
+async function startShortcutRecording(kind) {
   stopShortcutRecording();
+  if (window.api.suspendShortcuts) {
+    await window.api.suspendShortcuts().catch(() => {});
+  }
   shortcutRecording = kind;
   const record = shortcutRecordEl(kind);
   record.classList.add('recording');

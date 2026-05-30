@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   setShowShortcut: (shortcut) => ipcRenderer.invoke('set-show-shortcut', shortcut),
   setQuickPasteShortcut: (shortcut) => ipcRenderer.invoke('set-quick-paste-shortcut', shortcut),
+  suspendShortcuts: () => ipcRenderer.invoke('suspend-shortcuts'),
+  resumeShortcuts: () => ipcRenderer.invoke('resume-shortcuts'),
   resolveShowShortcut: (shortcut) => ipcRenderer.invoke('resolve-show-shortcut', shortcut),
   groupCreate: (name) => ipcRenderer.invoke('group-create', name),
   groupDelete: (name) => ipcRenderer.invoke('group-delete', name),

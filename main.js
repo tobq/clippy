@@ -2945,6 +2945,8 @@ function setupIPC() {
 
   ipcMain.handle('set-show-shortcut', (_, shortcut) => setShowShortcut(shortcut));
   ipcMain.handle('set-quick-paste-shortcut', (_, shortcut) => setQuickPasteShortcut(shortcut));
+  ipcMain.handle('suspend-shortcuts', () => suspendShortcutsForRecording());
+  ipcMain.handle('resume-shortcuts', () => resumeShortcutsAfterRecording());
   ipcMain.handle('resolve-show-shortcut', (_, shortcut) => {
     const hook = getMacosHotkey();
     return hook ? hook.resolveShortcutFromCurrentModifiers(shortcut) : shortcut;
@@ -3111,6 +3113,7 @@ function setupIPC() {
 // --- Global shortcuts ---
 let windowsHook = null;
 let macosHotkey = null;
+let shortcutsSuspended = false;
 
 function getMacosHotkey() {
   if (process.platform !== 'darwin') return null;
@@ -3219,15 +3222,21 @@ function setQuickPasteShortcut(shortcut) {
 }
 
 function registerShortcuts() {
+  if (shortcutsSuspended) {
+    return {
+      showShortcutRegistered: true,
+      showShortcut: effectiveShowShortcut(),
+      quickPasteRegistered: true,
+      quickPasteShortcut: effectiveQuickPasteShortcut(),
+    };
+  }
   globalShortcut.unregisterAll();
 
   let showShortcutRegistered = true;
   let quickPasteRegistered = true;
-  const showKey = globalShowShortcut();
+  const macosShowKey = process.platform === 'darwin' ? effectiveShowShortcut() : '';
+  const showKey = process.platform === 'darwin' ? '' : globalShowShortcut();
   const quickPasteKey = globalQuickPasteShortcut();
-  const macosFnShowKey = process.platform === 'darwin' && shortcutUsesFn(settings.show_shortcut)
-    ? settings.show_shortcut
-    : '';
 
   if (process.platform === 'win32') {
     // Windows Clipboard History owns Win+V and Win+Numpad1-9, so we can't use
@@ -3246,13 +3255,12 @@ function registerShortcuts() {
 
   if (process.platform === 'darwin') {
     const hook = getMacosHotkey();
+    hook.clearRuntimeShortcut();
     hook.clearQuickPasteShortcuts();
-    if (macosFnShowKey) {
-      const result = hook.install({ shortcut: macosFnShowKey, onPressed: showPopup });
+    if (macosShowKey) {
+      const result = hook.install({ shortcut: macosShowKey, onPressed: showPopup });
       showShortcutRegistered = !!result.ok;
       if (!result.ok) logSafe(`Warning: ${result.error}`);
-    } else if (hook) {
-      hook.clearRuntimeShortcut();
     }
   }
 
@@ -3306,8 +3314,9 @@ function registerShortcuts() {
   }
   diagnostics.record('shortcut.register', {
     platform: process.platform,
-    show_key: showKey,
+    show_key: macosShowKey || showKey,
     show_registered: showShortcutRegistered,
+    show_backend: macosShowKey ? 'carbon' : (showKey ? 'electron' : ''),
     quick_paste_key: quickPasteKey,
     quick_paste_registered: quickPasteRegistered,
     quick_paste_registrations: quickPasteRegistrations,
@@ -3319,6 +3328,24 @@ function registerShortcuts() {
     quickPasteRegistered,
     quickPasteShortcut: effectiveQuickPasteShortcut(),
   };
+}
+
+function suspendShortcutsForRecording() {
+  shortcutsSuspended = true;
+  globalShortcut.unregisterAll();
+  if (macosHotkey) {
+    macosHotkey.clearRuntimeShortcut();
+    macosHotkey.clearQuickPasteShortcuts();
+  }
+  diagnostics.record('shortcut.suspend_for_recording', {}, { forceFile: diagnostics.isEnabled() });
+  return { ok: true };
+}
+
+function resumeShortcutsAfterRecording() {
+  shortcutsSuspended = false;
+  const result = registerShortcuts();
+  diagnostics.record('shortcut.resume_after_recording', result, { forceFile: diagnostics.isEnabled() });
+  return { ok: true, ...result };
 }
 
 nativeTheme.on('updated', notifyColorSchemeChanged);
